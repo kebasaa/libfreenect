@@ -325,9 +325,11 @@ jobs:
 
   # One library for both Mac CPUs. Homebrew's libusb has only the runner's
   # architecture, so libusb is built from source as a universal library.
+  # Runs on the Intel runner: Apple's compiler builds both architectures there
+  # too, and GitHub's Apple Silicon runners have often not been available.
   macos-universal:
     name: macOS universal (arm64 + x86_64)
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v7
 
@@ -364,14 +366,16 @@ jobs:
             case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "$f is not universal"; exit 1;; esac
           done
 
-      - name: Unit tests, natively and under Rosetta
+      # The runner's own architecture runs natively; the other one only where
+      # the Mac can run it (arm64 code can't run on an Intel Mac).
+      - name: Unit tests
         run: |
           set -e
           ctest --test-dir build --output-on-failure
-          if arch -x86_64 /usr/bin/true 2>/dev/null; then
-            for t in build/bin/test_*; do echo "== $t (x86_64)"; arch -x86_64 "$t" > /dev/null; done
+          if [ "$(uname -m)" = arm64 ] && arch -x86_64 /usr/bin/true 2>/dev/null; then
+            for t in build/bin/test_*; do echo "== $t (x86_64, Rosetta)"; arch -x86_64 "$t" > /dev/null; done
           else
-            echo "::notice::Rosetta is not available on this runner; the x86_64 slices were not run"
+            echo "Tests ran as $(uname -m); the other architecture is checked with lipo only"
           fi
 
   # The supported Linux releases that GitHub has no runners for, in containers.
