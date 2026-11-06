@@ -56,6 +56,7 @@ set (PROJECT_APIVER
 OPTION(BUILD_REDIST_PACKAGE "Build libfreenect in a legally-redistributable manner (only affects audio)" ON)
 OPTION(BUILD_EXAMPLES "Build example programs" ON)
 OPTION(BUILD_TESTS "Build the unit tests (no Kinect needed; run with ctest)" ON)
+OPTION(FREENECT_WERROR "GCC/Clang: build with -Wall -Wextra -Werror (CI does)" OFF)
 OPTION(BUILD_FAKENECT "Build fakenect mock library" ON)
 OPTION(BUILD_C_SYNC "Build c synchronous library" ON)
 OPTION(BUILD_CPP "Build C++ Library (currently header only)" ON)
@@ -135,6 +136,10 @@ include_directories(${LIBUSB_1_INCLUDE_DIRS})
 if(WIN32)
   include_directories("${CMAKE_CURRENT_SOURCE_DIR}/platform/windows")
 endif()
+
+if (FREENECT_WERROR AND (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang"))
+  add_compile_options(-Wall -Wextra -Werror)
+endif ()
 
 # Add library project
 add_subdirectory (src)

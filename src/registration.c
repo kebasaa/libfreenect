@@ -392,7 +392,7 @@ void freenect_map_rgb_to_depth(freenect_device* dev, uint16_t* depth_mm, uint8_t
 		uint32_t cindex = map[index];
 
 		// pixels without depth data or out of bounds are black
-		if (cindex == -1) {
+		if (cindex == (uint32_t)-1) {
 			index *= 3;
 			rgb_registered[index+0] = 0;
 			rgb_registered[index+1] = 0;

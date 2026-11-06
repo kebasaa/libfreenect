@@ -69,6 +69,7 @@ static void prepare_iso_out_data(freenect_device* dev, uint8_t* buffer) {
 		case 0x80:
 			stream->out_seq = 0;
 			// TODO: if we're at the beginning of a new outgoing window, save a timestamp
+			// fall through
 		case 0x2b:
 		case 0x56:
 			stream->out_counter_within_window = 0;
@@ -82,6 +83,7 @@ static void prepare_iso_out_data(freenect_device* dev, uint8_t* buffer) {
 }
 
 static void iso_out_callback(freenect_device *dev, uint8_t *pkt, int len) {
+	(void)len;
 	prepare_iso_out_data(dev, pkt);
 }
 

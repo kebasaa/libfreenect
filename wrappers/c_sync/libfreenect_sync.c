@@ -187,6 +187,7 @@ static void pending_runloop_tasks_wait_zero(void)
 
 static void *init(void *unused)
 {
+	(void)unused;
 	pending_runloop_tasks_wait_zero();
 	pthread_mutex_lock(&runloop_lock);
 	while (thread_running && freenect_process_events(ctx) >= 0) {
@@ -380,7 +381,7 @@ int freenect_sync_get_video_with_res(void **video, uint32_t *timestamp, int inde
 		printf("Error: Invalid index [%d]\n", index);
 		return -1;
 	}
-	if (!thread_running || !kinects[index] || kinects[index]->video.fmt != fmt || kinects[index]->video.res != res)
+	if (!thread_running || !kinects[index] || kinects[index]->video.fmt != (int)fmt || kinects[index]->video.res != (int)res)
 		if (setup_kinect(index, res, fmt, 0))
 			return -1;
 	sync_get(video, timestamp, &kinects[index]->video);
@@ -399,8 +400,8 @@ int freenect_sync_get_depth_with_res(void **depth, uint32_t *timestamp, int inde
 		printf("Error: Invalid index [%d]\n", index);
 		return -1;
 	}
-	if (!thread_running || !kinects[index] || kinects[index]->depth.fmt != fmt
-            || kinects[index]->depth.res != res)
+	if (!thread_running || !kinects[index] || kinects[index]->depth.fmt != (int)fmt
+            || kinects[index]->depth.res != (int)res)
 		if (setup_kinect(index, res, fmt, 1))
 			return -1;
 	sync_get(depth, timestamp, &kinects[index]->depth);

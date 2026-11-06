@@ -71,7 +71,6 @@ static freenect_frame_mode supported_depth_modes[depth_mode_count] = {
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_REGISTERED), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_REGISTERED}, 640*480*2, 640, 480, 16, 0, 30, 1},
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_MM), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_MM}, 640*480*2, 640, 480, 16, 0, 30, 1},
 };
-static const freenect_frame_mode invalid_mode = {0, (freenect_resolution)0, {(freenect_video_format)0}, 0, 0, 0, 0, 0, 0, 0};
 
 struct pkt_hdr {
 	uint8_t magic[2];
@@ -230,6 +229,7 @@ static int stream_process(freenect_context *ctx, packet_stream *strm, uint8_t *p
 
 static void stream_init(freenect_context *ctx, packet_stream *strm, int rlen, int plen)
 {
+	(void)ctx;
 	strm->valid_frames = 0;
 	strm->synced = 0;
 
@@ -259,6 +259,7 @@ static void stream_init(freenect_context *ctx, packet_stream *strm, int rlen, in
 
 static void stream_freebufs(freenect_context *ctx, packet_stream *strm)
 {
+	(void)ctx;
 	if (strm->split_bufs)
 		free(strm->raw_buf);
 	if (strm->lib_buf)
@@ -853,6 +854,7 @@ int freenect_start_depth(freenect_device *dev)
 		case FREENECT_DEPTH_REGISTERED:
 		case FREENECT_DEPTH_MM:
 			freenect_init_registration(dev);
+			// fall through - these are computed from the 11-bit stream
 		case FREENECT_DEPTH_11BIT:
 			stream_init(ctx, &dev->depth, freenect_find_depth_mode(dev->depth_resolution, FREENECT_DEPTH_11BIT_PACKED).bytes, freenect_find_depth_mode(dev->depth_resolution, FREENECT_DEPTH_11BIT).bytes);
 			break;

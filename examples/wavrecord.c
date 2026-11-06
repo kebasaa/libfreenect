@@ -55,6 +55,7 @@ void in_callback(freenect_device* dev, int num_samples,
                  int32_t* mic1, int32_t* mic2,
                  int32_t* mic3, int32_t* mic4,
                  int16_t* cancelled, void *unknown) {
+	(void)unknown; (void)cancelled;
 	capture* c = (capture*)freenect_get_user(dev);
 	fwrite(mic1, 1, num_samples*sizeof(int32_t), c->logfiles[0]);
 	fwrite(mic2, 1, num_samples*sizeof(int32_t), c->logfiles[1]);
@@ -65,6 +66,7 @@ void in_callback(freenect_device* dev, int num_samples,
 }
 
 int main(int argc, char** argv) {
+	(void)argc; (void)argv;
 	// Stop cleanly on Ctrl+C, termination, or when the terminal is closed.
 	fn_install_exit_handlers();
 

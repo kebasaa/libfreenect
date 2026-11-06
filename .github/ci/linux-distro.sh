@@ -32,7 +32,7 @@ dpkg -s libusb-1.0-0-dev libglfw3-dev 2>/dev/null | grep -E '^(Package|Version):
 
 cmake -S "$SRC" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
 	-DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_FAKENECT=ON \
-	-DFREENECT_GL_VIEWERS=GLFW -DBUILD_CPACK_DEB=ON
+	-DFREENECT_GL_VIEWERS=GLFW -DBUILD_CPACK_DEB=ON -DFREENECT_WERROR=ON
 cmake --build "$BUILD" --parallel "$(nproc)"
 
 echo "== unit tests (the window tests under Xvfb)"

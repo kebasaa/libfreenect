@@ -39,12 +39,14 @@ static unsigned depth_frames = 0, video_frames = 0;
 
 void depth_cb(freenect_device* dev, void* data, uint32_t timestamp)
 {
+	(void)dev; (void)data;
 	depth_frames++;
 	printf("Received depth frame at %d\n", timestamp);
 }
 
 void video_cb(freenect_device* dev, void* data, uint32_t timestamp)
 {
+	(void)dev; (void)data;
 	video_frames++;
 	printf("Received video frame at %d\n", timestamp);
 }

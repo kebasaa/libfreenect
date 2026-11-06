@@ -65,6 +65,7 @@ void in_callback(freenect_device* dev, int num_samples,
                  int32_t* mic1, int32_t* mic2,
                  int32_t* mic3, int32_t* mic4,
                  int16_t* cancelled, void *unknown) {
+	(void)unknown; (void)cancelled;
 	pthread_mutex_lock(&audiobuf_mutex);
 	capture* c = (capture*)freenect_get_user(dev);
 	if(num_samples < c->max_samples - c->current_idx) {
@@ -91,6 +92,7 @@ void in_callback(freenect_device* dev, int num_samples,
 }
 
 void* freenect_threadfunc(void* arg) {
+	(void)arg;
 	while(!die && freenect_process_events(f_ctx) >= 0) {
 		// If we did anything else in the freenect thread, it might go here.
 	}
@@ -149,6 +151,7 @@ void Reshape(int w, int h) {
 }
 
 void Keyboard(unsigned char key, int x, int y) {
+	(void)y; (void)x;
 	if(key == 'q') {
 		die = 1;
 		pthread_join(freenect_thread, NULL);

@@ -51,6 +51,7 @@ void no_kinect_quit(void)
 
 int main(int argc, char *argv[])
 {
+	(void)argv; (void)argc;
 	// Stop cleanly on Ctrl+C, termination, or when the terminal is closed.
 	fn_install_exit_handlers();
 	srand((unsigned)time(0));

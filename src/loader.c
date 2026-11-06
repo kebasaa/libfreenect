@@ -94,7 +94,7 @@ static int abort_upload(fnusb_dev *dev) {
 	return -1;
 }
 
-static int check_version_string(fnusb_dev* dev) {
+FN_UNUSED static int check_version_string(fnusb_dev* dev) {
 	freenect_context* ctx = dev->parent->parent;
 	bootloader_command bootcmd;
 	memset(&bootcmd, 0, sizeof(bootcmd));
@@ -405,7 +405,7 @@ FN_INTERNAL int upload_firmware_from_memory(fnusb_dev* dev, unsigned char * fw_f
 		dev->parent->audio_tag++;
 	} while (read > 0);
 
-	if (total_bytes_sent != fwheader.size) {
+	if (total_bytes_sent < 0 || (uint32_t)total_bytes_sent != fwheader.size) {
 		FN_ERROR("upload_firmware: firmware image declared %d bytes, but file only contained %d bytes\n", fwheader.size, total_bytes_sent);
 		return -1;
 	}

@@ -142,6 +142,7 @@ void DrawGLScene() {
 
 void keyPressed(unsigned char key, int x, int y)
 {
+	(void)y; (void)x;
 	if (key == 27 || key == 'q') {
 		die = 1;
 		pthread_join(freenect_thread, NULL);
@@ -195,6 +196,7 @@ void InitGL(int Width, int Height)
 
 void *gl_threadfunc(void *arg)
 {
+	(void)arg;
 	printf("GL thread\n");
 	glutInit(&g_argc, g_argv);
 
@@ -220,6 +222,7 @@ uint16_t t_gamma[10000];
 
 void depth_cb(freenect_device *dev, void *v_depth, uint32_t timestamp)
 {
+	(void)dev; (void)timestamp;
 	int i;
 	uint16_t *depth = (uint16_t*)v_depth;
 
@@ -276,6 +279,7 @@ void depth_cb(freenect_device *dev, void *v_depth, uint32_t timestamp)
 
 void rgb_cb(freenect_device *dev, void *rgb, uint32_t timestamp)
 {
+	(void)timestamp;
 	pthread_mutex_lock(&gl_backbuf_mutex);
 
 	// swap buffers
@@ -291,6 +295,7 @@ void rgb_cb(freenect_device *dev, void *rgb, uint32_t timestamp)
 
 void *freenect_threadfunc(void *arg)
 {
+	(void)arg;
 	freenect_set_depth_callback(f_dev, depth_cb);
 	freenect_set_video_callback(f_dev, rgb_cb);
 	freenect_set_video_mode(f_dev, freenect_find_video_mode(FREENECT_RESOLUTION_MEDIUM, FREENECT_VIDEO_RGB));

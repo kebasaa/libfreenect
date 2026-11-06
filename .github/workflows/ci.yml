@@ -110,7 +110,7 @@ jobs:
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
           -DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_FAKENECT=ON
-          -DBUILD_CPACK_DEB=ON
+          -DBUILD_CPACK_DEB=ON -DFREENECT_WERROR=ON
 
       - name: Build
         run: cmake --build build --parallel

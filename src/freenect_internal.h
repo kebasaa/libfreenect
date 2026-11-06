@@ -37,6 +37,13 @@
   #define FN_INTERNAL
 #endif
 
+// A function kept although nothing calls it yet.
+#if defined(__GNUC__) || defined(__clang__)
+  #define FN_UNUSED __attribute__ ((unused))
+#else
+  #define FN_UNUSED
+#endif
+
 
 typedef void (*fnusb_iso_cb)(freenect_device *dev, uint8_t *buf, int len);
 
