@@ -898,6 +898,10 @@ int freenect_start_depth(freenect_device *dev)
 	write_register(dev, 0x06, 0x02); // start depth stream
 	write_register(dev, 0x17, 0x00); // disable depth hflip
 
+	// IR projector: on, as Microsoft's runtime does after every depth start,
+	// unless freenect_set_ir_emitter(dev, 0) asked to keep it off.
+	fn_set_ir_emitter(dev, !dev->ir_emitter_forced_off);
+
 	dev->depth.running = 1;
 	return 0;
 }
@@ -1063,6 +1067,7 @@ int freenect_stop_depth(freenect_device *dev)
 
 	dev->depth.running = 0;
 	write_register(dev, 0x06, 0x00); // stop depth stream
+	fn_set_ir_emitter(dev, 0);       // and switch the IR projector off (#385)
 
 	res = fnusb_stop_iso(&dev->usb_cam, &dev->depth_isoc);
 	if (res < 0) {
@@ -1275,21 +1280,23 @@ FN_INTERNAL int freenect_camera_init(freenect_device *dev)
 FN_INTERNAL int freenect_camera_teardown(freenect_device *dev)
 {
 	freenect_context *ctx = dev->parent;
-	int res = 0;
+	int res = 0, r;
+	// Stop both streams: this used to return after stopping depth, leaving a
+	// running video stream behind.
 	if (dev->depth.running) {
-		res = freenect_stop_depth(dev);
-		if (res < 0) {
+		r = freenect_stop_depth(dev);
+		if (r < 0) {
 			FN_ERROR("freenect_camera_teardown(): Failed to stop depth camera\n");
+			res = r;
 		}
-		return res;
 	}
 	if (dev->video.running) {
-		res = freenect_stop_video(dev);
-		if (res < 0) {
+		r = freenect_stop_video(dev);
+		if (r < 0) {
 			FN_ERROR("freenect_camera_teardown(): Failed to stop video camera\n");
+			res = r;
 		}
-		return res;
 	}
 	freenect_destroy_registration(&(dev->registration));
-	return 0;
+	return res;
 }

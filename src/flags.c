@@ -314,6 +314,30 @@ FN_INTERNAL int send_cmd(freenect_device *dev, uint16_t cmd, void *cmdbuf, unsig
 	return actual_len;
 }
 
+// IR projector (laser diode) on or off: GM command 0x0086 with a 16-bit 1 or 0.
+// Microsoft's runtime sends "on" right after every depth start and "off" after
+// every depth stop, for every Kinect v1 model.
+FN_INTERNAL int fn_set_ir_emitter(freenect_device *dev, int on)
+{
+	freenect_context *ctx = dev->parent;
+	uint16_t cmd = fn_le16(on ? 1 : 0);
+	uint8_t reply[16];
+	int res = send_cmd(dev, 0x0086, &cmd, 2, reply, sizeof(reply));
+	if (res < 0)
+		FN_WARNING("Could not switch the IR projector %s: %d\n", on ? "on" : "off", res);
+	return res < 0 ? res : 0;
+}
+
+int freenect_set_ir_emitter(freenect_device *dev, int on)
+{
+	dev->ir_emitter_forced_off = !on;
+	// Applied now only while depth runs; freenect_start_depth() applies it
+	// after every start, and freenect_stop_depth() switches the projector off.
+	if (!dev->depth.running)
+		return 0;
+	return fn_set_ir_emitter(dev, on);
+}
+
 // returns UINT16_MAX on error
 FN_INTERNAL uint16_t read_register(freenect_device *dev, uint16_t reg)
 {

@@ -284,6 +284,9 @@ struct _freenect_device {
 
 	fn_kinect_type device_type;
 
+	// freenect_set_ir_emitter(dev, 0): keep the IR projector off while depth runs.
+	int ir_emitter_forced_off;
+
 	// Motor pacing (as in Microsoft's runtime): spacing of 1414 control
 	// transfers, and the tilt rate limit (>= 1 s apart, <= 15 moves per 20 s).
 	uint64_t motor_last_ctrl_ms;
@@ -294,6 +297,9 @@ struct _freenect_device {
 
 // LIBFREENECT_LED=off: the LED stays off (see freenect_set_led()).
 int fn_led_forced_off(void);
+
+// Switch the IR projector (laser) on or off: camera command 0x0086.
+int fn_set_ir_emitter(freenect_device *dev, int on);
 
 // Monotonic milliseconds and sleep, shared by the device code.
 uint64_t fn_now_ms(void);

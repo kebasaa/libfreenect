@@ -672,6 +672,21 @@ FREENECTAPI int freenect_set_depth_mode(freenect_device* dev, const freenect_fra
 FREENECTAPI int freenect_set_flag(freenect_device *dev, freenect_flag flag, freenect_flag_value value);
 
 /**
+ * Switches the IR projector (laser) on or off.
+ *
+ * The projector is switched on when depth starts and off when it stops. With
+ * on = 0 it is kept off while depth runs (depth then sees nothing), which is
+ * useful for IR-only use or for other depth cameras nearby. The setting holds
+ * for later depth starts until it is changed again.
+ *
+ * @param dev Device
+ * @param on 1 to allow the projector, 0 to keep it off
+ *
+ * @return 0 on success, < 0 if the camera rejected the command
+ */
+FREENECTAPI int freenect_set_ir_emitter(freenect_device *dev, int on);
+
+/**
  * Get the current exposure in microseconds
  *
  * @param dev Device to set exposure
