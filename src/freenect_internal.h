@@ -292,6 +292,9 @@ struct _freenect_device {
 	int tilt_window_count;
 };
 
+// LIBFREENECT_LED=off: the LED stays off (see freenect_set_led()).
+int fn_led_forced_off(void);
+
 // Monotonic milliseconds and sleep, shared by the device code.
 uint64_t fn_now_ms(void);
 void fn_sleep_ms(unsigned ms);

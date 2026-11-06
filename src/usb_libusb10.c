@@ -456,7 +456,7 @@ FN_INTERNAL int fnusb_keep_alive_led(freenect_context* ctx, libusb_device* audio
 	}
 	else
 	{
-		fnusb_set_led_alt(audioHandle, ctx, LED_GREEN);
+		fnusb_set_led_alt(audioHandle, ctx, fn_led_forced_off() ? LED_OFF : LED_GREEN);
 		libusb_release_interface(audioHandle, 0);
 	}
 

@@ -170,6 +170,11 @@ FREENECTAPI int freenect_open_device(freenect_context *ctx, freenect_device **de
 
 	*dev = pdev;
 
+	// LIBFREENECT_LED=off: switch the LED off as soon as it can be reached. The
+	// 1473/K4W audio firmware starts with it blinking.
+	if (fn_led_forced_off() && (pdev->usb_motor.dev || pdev->motor_control_with_audio_enabled))
+		freenect_set_led(pdev, LED_OFF);
+
 	// Do device-specific initialization
 	if (pdev->usb_cam.dev) {
 		if (freenect_camera_init(pdev) < 0) {

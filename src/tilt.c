@@ -412,9 +412,22 @@ int freenect_set_led_alt(freenect_device *dev, freenect_led_options state)
 	return fnusb_set_led_alt(dev->usb_audio.dev, ctx, state);
 }
 
+// LIBFREENECT_LED=off keeps the LED off whatever applications ask for (for
+// example at night), on every model.
+FN_INTERNAL int fn_led_forced_off(void)
+{
+	const char *v = getenv("LIBFREENECT_LED");
+	return v && strcmp(v, "off") == 0;
+}
+
 int freenect_set_led(freenect_device *dev, freenect_led_options option)
 {
 	freenect_context *ctx = dev->parent;
+
+	if (option != LED_OFF && fn_led_forced_off()) {
+		FN_INFO("LIBFREENECT_LED=off: keeping the LED off\n");
+		option = LED_OFF;
+	}
 
 	//if we have motor control via audio and fw is uploaded - call the alt function
 	if( dev->motor_control_with_audio_enabled ){

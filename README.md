@@ -78,6 +78,19 @@ Microsoft's own audio firmware (`UAC.BIN`) can also be used. With it, the microp
 
 This downloads the installer from download.microsoft.com, extracts only the firmware, verifies its SHA-256, and writes `UACFirmware.bin`, without running the installer. Put the file where libfreenect looks for firmware, for example `~/.libfreenect/` or `/usr/share/libfreenect/`. On Linux and macOS libfreenect prefers `audios.bin`; set `LIBFREENECT_AUDIO_FIRMWARE=uac` to use `UACFirmware.bin`. On Windows, `freenect-driver-install` fetches it for you. Microsoft's licence terms for the Kinect for Windows Runtime apply to this firmware.
 
+## Environment variables
+
+These change libfreenect's behaviour for every application:
+
+| Variable | Effect |
+|---|---|
+| `LIBFREENECT_LED=off` | Keeps the Kinect's LED off, for example at night. Every request to set the LED turns it off instead, and it's switched off when the Kinect is opened |
+| `LIBFREENECT_TILT_RATE_LIMIT=0` | Turns off the tilt rate limit (at least 1 s between moves, at most 15 moves per 20 s), which protects the motor as in Microsoft's SDK |
+| `LIBFREENECT_FIRMWARE_PATH=DIR` | Looks for the audio firmware in `DIR` first |
+| `LIBFREENECT_AUDIO_FIRMWARE=uac` or `=xbox` | Loads only Microsoft's `UACFirmware.bin`, or only the Xbox `audios.bin` |
+| `LIBFREENECT_USBDK=1` | Windows: uses libusb's UsbDk backend instead of WinUSB |
+| `LIBFREENECT_WINDOWS_AUDIO_UNSAFE=1` | Windows: allows libfreenect's own audio streaming. It's disabled because it hung a test machine; only use it on a machine you can hard-reset |
+
 ## OSX
 
 If you don't have a package manager, install [Homebrew](http://brew.sh/).
