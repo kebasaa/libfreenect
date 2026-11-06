@@ -52,9 +52,11 @@ int freenect_set_flag(freenect_device *dev, freenect_flag flag, freenect_flag_va
 
 	if (flag == FREENECT_NEAR_MODE)
 	{
-		if (dev->usb_cam.PID != PID_K4W_CAMERA)
+		// As in Microsoft's runtime: only Kinect for Windows has near mode.
+		if (dev->device_type != FN_KINECT_WINDOWS)
 		{
-			FN_WARNING("Near mode is only supported by K4W");
+			FN_WARNING("Near mode is only supported by Kinect for Windows (this is: %s)\n",
+			           fnusb_kinect_type_name(dev->device_type));
 			return -1;
 		}
 

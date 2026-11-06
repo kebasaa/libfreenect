@@ -151,6 +151,53 @@ FN_INTERNAL libusb_device * fnusb_find_sibling_device(freenect_context* ctx, lib
 	return NULL;
 }
 
+static int fnusb_is_kinect_function(const struct libusb_device_descriptor *desc)
+{
+	if (desc->idVendor != VID_MICROSOFT)
+		return 0;
+	switch (desc->idProduct) {
+	case PID_NUI_CAMERA: case PID_K4W_CAMERA: case PID_NUI_MOTOR: case PID_NUI_MOTOR_ALT:
+	case PID_NUI_AUDIO: case PID_K4W_AUDIO: case PID_K4W_AUDIO_ALT_1: case PID_K4W_AUDIO_ALT_2:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+// Decide the Kinect model from its internal hub (see fnusb_kinect_type()): the
+// hub's IDs and the Kinect function on the hub's lowest port.
+static fn_kinect_type fnusb_detect_kinect_type(freenect_context *ctx, libusb_device *camera, libusb_device **devs,
+                                               int count, const struct libusb_device_descriptor *camera_desc)
+{
+	libusb_device *hub = libusb_get_parent(camera);
+	struct libusb_device_descriptor hub_desc;
+	int have_hub = hub != NULL && libusb_get_device_descriptor(hub, &hub_desc) == 0;
+	uint16_t first_pid = 0;
+	int first_port = 256, i;
+	fn_kinect_type type;
+
+	if (!have_hub)
+		memset(&hub_desc, 0, sizeof(hub_desc));
+	for (i = 0; have_hub && i < count; i++) {
+		struct libusb_device_descriptor desc;
+		if (libusb_get_parent(devs[i]) != hub || libusb_get_device_descriptor(devs[i], &desc) != 0)
+			continue;
+		if (fnusb_is_kinect_function(&desc) && libusb_get_port_number(devs[i]) < first_port) {
+			first_port = libusb_get_port_number(devs[i]);
+			first_pid = desc.idProduct;
+		}
+	}
+	type = fnusb_kinect_type(have_hub, hub_desc.idVendor, hub_desc.idProduct, first_pid,
+	                         camera_desc->idProduct, camera_desc->bcdDevice);
+	if (have_hub && ((hub_desc.idVendor == VID_NEC && hub_desc.idProduct == PID_NEC_HUB) ||
+	                 (hub_desc.idVendor == VID_MICROSOFT && hub_desc.idProduct == PID_KINECT_HUB)))
+		FN_NOTICE("Kinect model: %s, from hub %04x:%04x\n", fnusb_kinect_type_name(type), hub_desc.idVendor, hub_desc.idProduct);
+	else
+		FN_NOTICE("Kinect model: %s, guessed from the camera (bcdDevice %04x): the Kinect's hub is not visible\n",
+		          fnusb_kinect_type_name(type), camera_desc->bcdDevice);
+	return type;
+}
+
 FN_INTERNAL int fnusb_list_device_attributes(freenect_context *ctx, struct freenect_device_attributes** attribute_list)
 {
 	*attribute_list = NULL; // initialize some return value in case the user is careless.
@@ -413,7 +460,8 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 
 	dev->device_does_motor_control_with_audio = 0;
 	dev->motor_control_with_audio_enabled = 0;
-    
+	dev->device_type = FN_KINECT_UNKNOWN;
+
 	dev->usb_cam.parent = dev;
 	dev->usb_cam.dev = NULL;
 	dev->usb_motor.parent = dev;
@@ -447,6 +495,7 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 		}
 
 		camera = devs[i]; // found the requested camera
+		dev->device_type = fnusb_detect_kinect_type(ctx, camera, devs, (int)count, &desc);
 		if (ctx->enabled_subdevices & FREENECT_DEVICE_CAMERA)
 		{
 			res = libusb_open(camera, &dev->usb_cam.dev);
@@ -457,7 +506,7 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 				goto failure;
 			}
 
-			if (desc.idProduct == PID_K4W_CAMERA || desc.bcdDevice != fn_le32(267))
+			if (dev->device_type == FN_KINECT_XBOX_1473 || dev->device_type == FN_KINECT_WINDOWS)
 			{
 				freenect_device_flags requested_devices = ctx->enabled_subdevices;
 

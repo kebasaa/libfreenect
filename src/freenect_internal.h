@@ -147,6 +147,25 @@ static inline int32_t fn_le32s(int32_t s)
 #define PID_K4W_AUDIO 0x02be
 #define PID_K4W_AUDIO_ALT_1 0x02c3
 #define PID_K4W_AUDIO_ALT_2 0x02bb
+#define PID_NUI_MOTOR_ALT 0x02af // listed next to 02B0 in Microsoft's INF; role unknown
+
+// The Kinect's internal hub, which groups its USB functions into one sensor.
+#define VID_NEC 0x0409
+#define PID_NEC_HUB 0x005a       // Xbox 360 model 1414
+#define PID_KINECT_HUB 0x02c2    // Xbox 360 model 1473 and Kinect for Windows
+
+// Kinect v1 model, decided as Microsoft's runtime does: from the internal hub
+// and the Kinect function on its lowest port.
+typedef enum {
+	FN_KINECT_UNKNOWN = 0,
+	FN_KINECT_XBOX_1414 = 1, // NEC hub; motor/LED on 02B0
+	FN_KINECT_XBOX_1473 = 2, // Microsoft hub; motor/LED through the audio controller
+	FN_KINECT_WINDOWS = 3,   // Microsoft hub, 02BF camera; motor/LED through the audio controller, near mode
+} fn_kinect_type;
+
+fn_kinect_type fnusb_kinect_type(int have_hub, uint16_t hub_vid, uint16_t hub_pid, uint16_t first_child_pid,
+                                 uint16_t camera_pid, uint16_t camera_bcd);
+const char *fnusb_kinect_type_name(fn_kinect_type type);
 
 // Conversion from shutter width to exposure in microseconds
 // Measured using camtest.c with various very long exposure times
@@ -262,4 +281,6 @@ struct _freenect_device {
     
 	int device_does_motor_control_with_audio;
 	int motor_control_with_audio_enabled;
+
+	fn_kinect_type device_type;
 };
