@@ -1281,6 +1281,10 @@ FN_INTERNAL int freenect_camera_init(freenect_device *dev)
 		FN_ERROR("freenect_camera_init(): Failed to fetch const shift for device\n");
 		return res;
 	}
+	// A program that was killed while depth ran leaves the IR projector on
+	// until the Kinect loses power; switch it off until depth starts.
+	if (fn_set_ir_emitter(dev, 0) < 0)
+		FN_INFO("freenect_camera_init(): could not switch the IR projector off\n");
 	return 0;
 }
 

@@ -475,6 +475,7 @@ int freenect_set_led(freenect_device *dev, freenect_led_options option)
 		FN_INFO("LIBFREENECT_LED=off: keeping the LED off\n");
 		option = LED_OFF;
 	}
+	dev->led_changed = 1; // freenect_close_device() puts it back
 
 	//if we have motor control via audio and fw is uploaded - call the alt function
 	if( dev->motor_control_with_audio_enabled ){

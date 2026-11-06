@@ -46,7 +46,7 @@
 #include "fn_glut.h"
 
 #define MAX_WINDOWS 8
-#define EXIT_GRACE_S 5 /* a close request ends the process after this, whatever the viewer does */
+#define EXIT_GRACE_S 10 /* a close request ends the process after this, whatever the viewer does; stopping two streams can take a few seconds on Windows */
 
 typedef struct {
 	GLFWwindow *w;
@@ -341,7 +341,6 @@ int fn_glutCreateWindow(const char *title)
 		fprintf(stderr, "Too many windows\n");
 		exit(1);
 	}
-	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); /* shown once it is in place */
 	windows[i].w = glfwCreateWindow(next_w, next_h, title, NULL, NULL);
 	if (!windows[i].w) {
 		fprintf(stderr, "Cannot open a window \"%s\"\n", title);
@@ -357,15 +356,12 @@ int fn_glutCreateWindow(const char *title)
 		}
 	}
 	glfwSetWindowUserPointer(windows[i].w, (void *)(size_t)(i + 1));
-	if (next_x >= 0 && next_y >= 0) {
-		/* GLUT places the window's frame there; GLFW places its drawing area,
-		 * which at (0, 0) would push the title bar and borders off the
-		 * screen. Offset by the frame (ignored on Wayland). */
-		int left = 0, top = 0;
-		glfwGetWindowFrameSize(windows[i].w, &left, &top, NULL, NULL);
-		glfwSetWindowPos(windows[i].w, next_x + left, next_y + top);
-	}
-	glfwShowWindow(windows[i].w); /* created hidden, so that it appears in place */
+	/* glutInitWindowPosition() is deliberately not applied: the window system
+	 * places the window, which keeps its title bar on the screen. (GLUT
+	 * positions a window's frame, GLFW its drawing area; at the viewers'
+	 * (0, 0) the title bar ended up off the screen on Windows, also after
+	 * offsetting by the frame size. Wayland ignores positions anyway.) */
+	(void)next_x; (void)next_y;
 	glfwSetCharCallback(windows[i].w, char_cb);
 	glfwSetKeyCallback(windows[i].w, key_cb);
 	glfwSetMouseButtonCallback(windows[i].w, mouse_button_cb);

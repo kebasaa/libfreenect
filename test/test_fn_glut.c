@@ -28,7 +28,7 @@
  * display, reshape, idle; Ctrl+C delivered as Esc; the watchdog. No Kinect.
  *   test_fn_glut normal   Ctrl+C -> Esc -> the viewer exits: exit code 0
  *   test_fn_glut blocked  the viewer is stuck after Ctrl+C: the watchdog
- *                         ends it with SIGALRM about 5 s later
+ *                         ends it with SIGALRM about 10 s later
  * Exits with 77 (skipped) when there is no display. */
 #define _DEFAULT_SOURCE
 #include <stdio.h>

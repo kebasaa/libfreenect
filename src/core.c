@@ -336,6 +336,13 @@ FREENECTAPI int freenect_close_device(freenect_device *dev)
 		freenect_camera_teardown(dev);
 	}
 
+	// Put the LED back into the Kinect's idle state (blinking green, as at
+	// power-on; off with LIBFREENECT_LED=off), so that it doesn't keep showing
+	// what the program last chose once nothing uses the Kinect.
+	if (dev->led_changed && freenect_device_connected(dev) &&
+	    (dev->usb_motor.dev || dev->motor_control_with_audio_enabled))
+		freenect_set_led(dev, LED_BLINK_GREEN);
+
 	res = fnusb_close_subdevices(dev);
 	if (res < 0) {
 		FN_ERROR("fnusb_close_subdevices failed: %d\n", res);

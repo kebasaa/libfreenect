@@ -356,6 +356,8 @@ struct _freenect_device {
 	// 0 if unknown; and whether the missing LED command was reported.
 	int audio_fw_build;
 	int led_unsupported_noted;
+	// The LED was set; freenect_close_device() returns it to the idle state.
+	int led_changed;
 	// Times the audio controller was reopened after it rebooted.
 	int audio_recover_attempts;
 };
