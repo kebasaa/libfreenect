@@ -92,6 +92,7 @@ These change libfreenect's behaviour for every application:
 | `LIBFREENECT_USBDK=1` | Windows: uses libusb's UsbDk backend instead of WinUSB |
 | `LIBFREENECT_GLFW_PLATFORM=x11` or `=wayland` | Linux: the window system the viewers use (GLFW 3.4 and newer prefer Wayland) |
 | `LIBFREENECT_HOTPLUG_POLL=1` | Finds Kinects being plugged in and out by scanning once a second, instead of through libusb's hotplug events (for example in a VM or container where those don't arrive) |
+| `LIBFREENECT_LOG=info` (or `error`, `warning`, `notice`, `debug`, `spew`) | Sets libfreenect's log level whatever the program asks for, and puts a time stamp on each line. Useful for bug reports |
 | `LIBFREENECT_WINDOWS_AUDIO_UNSAFE=1` | Windows: allows libfreenect's own audio streaming. It's disabled because it hung a test machine; only use it on a machine you can hard-reset |
 
 ## Troubleshooting

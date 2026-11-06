@@ -37,6 +37,11 @@
  * shutdown request exit. For window close, logoff and shutdown, Windows ends
  * the process as soon as the handler returns, so the handler waits (at most
  * FN_EXIT_GRACE_MS) until main() has called fn_exit_done().
+ *
+ * The first Ctrl+C says so on stderr at once. A second one ends the program
+ * immediately, and if the clean shutdown takes longer than
+ * FN_EXIT_WATCHDOG_MS, the program is ended anyway, so that a tool can always
+ * be stopped.
  */
 
 #pragma once
@@ -44,6 +49,7 @@
 #include <signal.h>
 
 #define FN_EXIT_GRACE_MS 4000
+#define FN_EXIT_WATCHDOG_MS 10000
 
 #if defined(_MSC_VER) && !defined(__cplusplus)
 #define FN_EXIT_INLINE static __inline
@@ -53,22 +59,53 @@
 
 static volatile sig_atomic_t fn_exit_requested = 0;
 
+#define FN_EXIT_MSG_FIRST "\nStopping (press Ctrl+C again to end at once)...\n"
+#define FN_EXIT_MSG_WATCHDOG "\nThe clean shutdown took longer than 10 s; ending the program now.\n"
+
 #ifdef _WIN32
 #include <windows.h>
 
 static HANDLE fn_exit_done_event = NULL;
+
+FN_EXIT_INLINE void fn_exit_write(const char *msg)
+{
+	DWORD written;
+	WriteFile(GetStdHandle(STD_ERROR_HANDLE), msg, (DWORD)lstrlenA(msg), &written, NULL);
+}
+
+FN_EXIT_INLINE DWORD WINAPI fn_exit_watchdog(LPVOID arg)
+{
+	(void)arg;
+	if (fn_exit_done_event && WaitForSingleObject(fn_exit_done_event, FN_EXIT_WATCHDOG_MS) == WAIT_OBJECT_0)
+		return 0; /* main() finished in time */
+	fn_exit_write(FN_EXIT_MSG_WATCHDOG);
+	ExitProcess(1); /* does not return */
+}
+
+FN_EXIT_INLINE void fn_exit_request(void)
+{
+	HANDLE t;
+	if (fn_exit_requested)
+		ExitProcess(130); /* second request: at once */
+	fn_exit_requested = 1;
+	fn_exit_write(FN_EXIT_MSG_FIRST);
+	t = CreateThread(NULL, 0, fn_exit_watchdog, NULL, 0, NULL);
+	if (t)
+		CloseHandle(t);
+}
 
 FN_EXIT_INLINE BOOL WINAPI fn_console_handler(DWORD type)
 {
 	switch (type) {
 	case CTRL_C_EVENT:
 	case CTRL_BREAK_EVENT:
-		fn_exit_requested = 1;
+		fn_exit_request();
 		return TRUE;
 	case CTRL_CLOSE_EVENT:
 	case CTRL_LOGOFF_EVENT:
 	case CTRL_SHUTDOWN_EVENT:
-		fn_exit_requested = 1;
+		if (!fn_exit_requested)
+			fn_exit_request();
 		if (fn_exit_done_event)
 			WaitForSingleObject(fn_exit_done_event, FN_EXIT_GRACE_MS);
 		return TRUE;
@@ -114,7 +151,13 @@ FN_EXIT_INLINE void fn_sleep_ms(unsigned ms)
 FN_EXIT_INLINE void fn_signal_handler(int sig)
 {
 	(void)sig;
+	if (fn_exit_requested)
+		_exit(130); /* second request: at once */
 	fn_exit_requested = 1;
+	if (write(STDERR_FILENO, FN_EXIT_MSG_FIRST, sizeof(FN_EXIT_MSG_FIRST) - 1) < 0) {
+		/* nothing to do */
+	}
+	alarm(FN_EXIT_WATCHDOG_MS / 1000); /* SIGALRM ends the process */
 }
 
 FN_EXIT_INLINE void fn_install_exit_handlers(void)
@@ -127,10 +170,12 @@ FN_EXIT_INLINE void fn_install_exit_handlers(void)
 #ifdef SIGQUIT
 	signal(SIGQUIT, fn_signal_handler);
 #endif
+	signal(SIGALRM, SIG_DFL);
 }
 
 FN_EXIT_INLINE void fn_exit_done(void)
 {
+	alarm(0);
 }
 
 #endif

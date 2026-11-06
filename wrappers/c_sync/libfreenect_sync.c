@@ -190,7 +190,13 @@ static void *init(void *unused)
 	(void)unused;
 	pending_runloop_tasks_wait_zero();
 	pthread_mutex_lock(&runloop_lock);
-	while (thread_running && freenect_process_events(ctx) >= 0) {
+	// A short timeout: without a stream there may be no USB events at all,
+	// and freenect_process_events() would then wait up to 60 s before
+	// freenect_sync_stop() is noticed.
+	struct timeval tv = { 0, 100000 };
+	while (thread_running && freenect_process_events_timeout(ctx, &tv) >= 0) {
+		tv.tv_sec = 0;
+		tv.tv_usec = 100000;
 		pthread_mutex_unlock(&runloop_lock);
 		// NOTE: This lets you run tasks while process_events isn't running
 		pending_runloop_tasks_wait_zero();

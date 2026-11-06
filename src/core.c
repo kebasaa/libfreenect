@@ -36,6 +36,8 @@
 #include "cameras.h"
 #include "loader.h"
 
+static int env_log_level(freenect_loglevel *level);
+
 
 FREENECTAPI int freenect_init(freenect_context **ctx, freenect_usb_context *usb_ctx)
 {
@@ -48,6 +50,8 @@ FREENECTAPI int freenect_init(freenect_context **ctx, freenect_usb_context *usb_
 	memset(*ctx, 0, sizeof(freenect_context));
 
 	(*ctx)->log_level = LL_NOTICE;
+	(*ctx)->log_from_env = env_log_level(&(*ctx)->log_level);
+	(*ctx)->log_start_ms = fn_now_ms();
 	(*ctx)->enabled_subdevices = (freenect_device_flags)(FREENECT_DEVICE_MOTOR | FREENECT_DEVICE_CAMERA);
 	res = fnusb_init(&(*ctx)->usb, usb_ctx);
 	if (res < 0) {
@@ -332,18 +336,28 @@ FREENECTAPI int freenect_close_device(freenect_device *dev)
 	freenect_context *ctx = dev->parent;
 	int res;
 
+	FN_INFO("Closing the Kinect\n");
 	if (dev->usb_cam.dev) {
 		freenect_camera_teardown(dev);
+		FN_INFO("Closing: camera streams stopped\n");
 	}
 
 	// Put the LED back into the Kinect's idle state (blinking green, as at
 	// power-on; off with LIBFREENECT_LED=off), so that it doesn't keep showing
 	// what the program last chose once nothing uses the Kinect.
 	if (dev->led_changed && freenect_device_connected(dev) &&
-	    (dev->usb_motor.dev || dev->motor_control_with_audio_enabled))
-		freenect_set_led(dev, LED_BLINK_GREEN);
+	    (dev->usb_motor.dev || dev->motor_control_with_audio_enabled)) {
+		int r = freenect_set_led(dev, LED_BLINK_GREEN);
+		if (r < 0)
+			FN_WARNING("Closing: could not put the LED back (%d)\n", r);
+		else
+			FN_INFO("Closing: LED back to its idle state\n");
+	} else if (dev->led_changed) {
+		FN_INFO("Closing: LED left as it is (Kinect disconnected, or no motor/LED access)\n");
+	}
 
 	res = fnusb_close_subdevices(dev);
+	FN_INFO("Closing: USB handles released\n");
 	if (res < 0) {
 		FN_ERROR("fnusb_close_subdevices failed: %d\n", res);
 		return res;
@@ -381,8 +395,29 @@ FREENECTAPI void *freenect_get_user(freenect_device *dev)
 	return dev->user_data;
 }
 
+// LIBFREENECT_LOG=fatal|error|warning|notice|info|debug|spew|flood sets the
+// log level whatever the program asks for, and adds a time stamp (seconds
+// since freenect_init()) to each line, for diagnosing a user's run.
+static int env_log_level(freenect_loglevel *level)
+{
+	static const char *const names[] = { "fatal", "error", "warning", "notice", "info", "debug", "spew", "flood" };
+	const char *v = getenv("LIBFREENECT_LOG");
+	int i;
+	if (!v)
+		return 0;
+	for (i = 0; i < 8; i++) {
+		if (strcmp(v, names[i]) == 0) {
+			*level = (freenect_loglevel)i;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 FREENECTAPI void freenect_set_log_level(freenect_context *ctx, freenect_loglevel level)
 {
+	if (ctx->log_from_env)
+		return; // LIBFREENECT_LOG wins
 	ctx->log_level = level;
 }
 
@@ -408,6 +443,10 @@ FN_INTERNAL void fn_log(freenect_context *ctx, freenect_loglevel level, const ch
 
 		ctx->log_cb(ctx, level, msgbuf);
 	} else {
+		if (ctx->log_from_env) {
+			uint64_t t = fn_now_ms() - ctx->log_start_ms;
+			fprintf(stderr, "[%4u.%03u] ", (unsigned)(t / 1000), (unsigned)(t % 1000));
+		}
 		va_start(ap, fmt);
 		vfprintf(stderr, fmt, ap);
 		va_end(ap);

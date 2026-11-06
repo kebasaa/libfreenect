@@ -94,6 +94,8 @@ void fnusb_hotplug_deregister(freenect_context *ctx);
 
 struct _freenect_context {
 	freenect_loglevel log_level;
+	int log_from_env;      // LIBFREENECT_LOG set the level (and adds time stamps)
+	uint64_t log_start_ms; // time base of those time stamps
 	freenect_log_cb log_cb;
 	fnusb_ctx usb;
 	freenect_device_flags enabled_subdevices;
