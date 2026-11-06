@@ -44,13 +44,14 @@
 #include <sys/sysctl.h>
 #endif
 
-fn_iso_verdict fn_iso_diag_add(fn_iso_diag *d, uint64_t now_ms, int pkts, int empty)
+fn_iso_verdict fn_iso_diag_add(fn_iso_diag *d, uint64_t now_ms, int pkts, int empty, int failed)
 {
 	fn_iso_verdict v = FN_ISO_OK;
 	if (d->window_start_ms == 0)
 		d->window_start_ms = now_ms ? now_ms : 1;
 	d->pkts += (uint32_t)pkts;
 	d->empty += (uint32_t)empty;
+	d->failed += (uint32_t)failed;
 	if (now_ms - d->window_start_ms < FN_ISO_WINDOW_MS)
 		return FN_ISO_OK;
 
@@ -59,12 +60,13 @@ fn_iso_verdict fn_iso_diag_add(fn_iso_diag *d, uint64_t now_ms, int pkts, int em
 	if (d->windows++ > 0 && d->pkts > 0) {
 		if ((uint64_t)d->empty * 100 >= (uint64_t)d->pkts * FN_ISO_NO_DATA_PERCENT)
 			v = FN_ISO_NO_DATA;
-		else if ((uint64_t)d->empty * 100 >= (uint64_t)d->pkts * FN_ISO_LOSS_PERCENT)
+		else if ((uint64_t)d->failed * 100 >= (uint64_t)d->pkts * FN_ISO_LOSS_PERCENT)
 			v = FN_ISO_HEAVY_LOSS;
 	}
 	d->last_pkts = d->pkts;
 	d->last_empty = d->empty;
-	d->pkts = d->empty = 0;
+	d->last_failed = d->failed;
+	d->pkts = d->empty = d->failed = 0;
 	d->window_start_ms = now_ms;
 	if (v != FN_ISO_OK) {
 		// Report each kind of problem once per stream start.

@@ -341,6 +341,7 @@ int fn_glutCreateWindow(const char *title)
 		fprintf(stderr, "Too many windows\n");
 		exit(1);
 	}
+	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); /* shown once it is in place */
 	windows[i].w = glfwCreateWindow(next_w, next_h, title, NULL, NULL);
 	if (!windows[i].w) {
 		fprintf(stderr, "Cannot open a window \"%s\"\n", title);
@@ -356,8 +357,15 @@ int fn_glutCreateWindow(const char *title)
 		}
 	}
 	glfwSetWindowUserPointer(windows[i].w, (void *)(size_t)(i + 1));
-	if (next_x >= 0 && next_y >= 0)
-		glfwSetWindowPos(windows[i].w, next_x, next_y); /* ignored on Wayland */
+	if (next_x >= 0 && next_y >= 0) {
+		/* GLUT places the window's frame there; GLFW places its drawing area,
+		 * which at (0, 0) would push the title bar and borders off the
+		 * screen. Offset by the frame (ignored on Wayland). */
+		int left = 0, top = 0;
+		glfwGetWindowFrameSize(windows[i].w, &left, &top, NULL, NULL);
+		glfwSetWindowPos(windows[i].w, next_x + left, next_y + top);
+	}
+	glfwShowWindow(windows[i].w); /* created hidden, so that it appears in place */
 	glfwSetCharCallback(windows[i].w, char_cb);
 	glfwSetKeyCallback(windows[i].w, key_cb);
 	glfwSetMouseButtonCallback(windows[i].w, mouse_button_cb);

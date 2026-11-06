@@ -76,13 +76,18 @@ int main(int argc, char *argv[])
 		freenect_get_mks_accel(state, &dx, &dy, &dz);
 
 		printf("led[%d] tilt[%d] accel[%lf,%lf,%lf]\n", led, tilt, dx,dy,dz);
+		// Flushed at once: when the output goes to a pipe or file it is
+		// otherwise buffered and lost if the program is stopped.
+		fflush(stdout);
 
 		fn_sleep_ms(3000);
 	}
 
 	printf("Stopping\n");
+	fflush(stdout);
 	freenect_sync_stop();
 	printf("Done\n");
+	fflush(stdout);
 	fn_exit_done();
 	return 0;
 }

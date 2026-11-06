@@ -1068,8 +1068,12 @@ int freenect_stop_depth(freenect_device *dev)
 		return -1;
 
 	dev->depth.running = 0;
-	write_register(dev, 0x06, 0x00); // stop depth stream
-	fn_set_ir_emitter(dev, 0);       // and switch the IR projector off (#385)
+	// A Kinect that was unplugged can't take commands; they would only fail
+	// after their timeouts.
+	if (!dev->usb_cam.device_dead) {
+		write_register(dev, 0x06, 0x00); // stop depth stream
+		fn_set_ir_emitter(dev, 0);       // and switch the IR projector off (#385)
+	}
 
 	res = fnusb_stop_iso(&dev->usb_cam, &dev->depth_isoc);
 	if (res < 0) {
@@ -1091,7 +1095,8 @@ int freenect_stop_video(freenect_device *dev)
 		return -1;
 
 	dev->video.running = 0;
-	write_register(dev, 0x05, 0x00); // stop video stream
+	if (!dev->usb_cam.device_dead)
+		write_register(dev, 0x05, 0x00); // stop video stream
 
 	res = fnusb_stop_iso(&dev->usb_cam, &dev->video_isoc);
 	if (res < 0) {
