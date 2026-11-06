@@ -13,6 +13,10 @@ add_test(NAME hotplug COMMAND test_hotplug)
 add_executable(test_core_hotplug test_core_hotplug.c ${CMAKE_SOURCE_DIR}/src/core.c ${CMAKE_SOURCE_DIR}/src/hotplug.c)
 add_test(NAME core_hotplug COMMAND test_core_hotplug)
 
+# Isochronous stream health check and VM detection (src/iso_diag.c)
+add_executable(test_iso_diag test_iso_diag.c ${CMAKE_SOURCE_DIR}/src/iso_diag.c)
+add_test(NAME iso_diag COMMAND test_iso_diag)
+
 # The viewers' GLFW window layer (examples/fn_glut.c): a close request reaches
 # the viewer as Esc, and a viewer that is stuck is ended by the watchdog.
 # Needs a display (CI uses xvfb-run); skipped without one.

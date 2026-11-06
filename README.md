@@ -94,6 +94,21 @@ These change libfreenect's behaviour for every application:
 | `LIBFREENECT_HOTPLUG_POLL=1` | Finds Kinects being plugged in and out by scanning once a second, instead of through libusb's hotplug events (for example in a VM or container where those don't arrive) |
 | `LIBFREENECT_WINDOWS_AUDIO_UNSAFE=1` | Windows: allows libfreenect's own audio streaming. It's disabled because it hung a test machine; only use it on a machine you can hard-reset |
 
+## Troubleshooting
+
+### No depth or video frames
+
+The Kinect streams depth, video and audio as USB *isochronous* transfers, which reserve bandwidth on the bus every 125 µs. Control requests (tilt, LED, opening the device) use ordinary transfers, so a Kinect can be found, tilt and blink, and still deliver no frames when the isochronous path doesn't work.
+
+libfreenect watches every stream. When, a few seconds after a stream starts, at least 95% of its packets arrive empty or failed, it logs a warning saying that the stream delivers no data; at 20% it notes that the stream is losing data. Each is reported once per stream start, with a hint for the situation:
+
+- **Power and cabling.** The Kinect needs its own power supply (the Xbox 360 model needs the USB/power adapter cable). Plug it into a port directly on the computer, not into a hub, a monitor's ports or an extension cable.
+- **USB controller.** Some USB 3 (xHCI) controllers handle the Kinect's high-bandwidth isochronous streams badly. If frames are missing or partial, try a port on another controller (on many PCs the front and back ports, or the USB 2 and USB 3 ports, are on different controllers), and keep other high-bandwidth devices such as webcams off the same controller.
+- **Virtual machines and containers.** USB passthrough of isochronous endpoints is often unreliable or unsupported, see [OpenKinect/libfreenect#696](https://github.com/OpenKinect/libfreenect/issues/696). libfreenect detects common hypervisors (QEMU/KVM, VMware, VirtualBox, Parallels, Xen, Hyper-V guests, macOS VMs) and WSL2, and says so in the warning.
+  - **WSL2 with usbipd:** usbip doesn't carry the Kinect's isochronous streams well. Use libfreenect on Windows itself instead (it uses the in-box WinUSB driver, see [Windows](#windows)).
+  - **Other VMs:** use the Kinect on the host, or pass a whole USB controller through to the VM (PCI passthrough, for example VFIO with QEMU/KVM), so that the guest drives real hardware rather than an emulated controller.
+  - Inside containers and VMs, libusb's hotplug events may not arrive; `LIBFREENECT_HOTPLUG_POLL=1` makes libfreenect scan for Kinects instead.
+
 ## OSX
 
 If you don't have a package manager, install [Homebrew](http://brew.sh/).

@@ -928,6 +928,33 @@ FN_INTERNAL int fnusb_close_subdevices(freenect_device *dev)
 	return 0;
 }
 
+// Count a transfer's packets for the stream health check, and explain once
+// when (almost) nothing arrives or much is lost.
+static void iso_diag_count(freenect_context *ctx, fnusb_isoc_stream *strm, int pkts, int empty)
+{
+	char vm[128];
+	const char *what = strm->parent == &strm->parent->parent->usb_audio ? "audio"
+	                 : strm->endpoint == 0x81 ? "video" : "depth";
+	fn_iso_verdict v = fn_iso_diag_add(&strm->diag, fn_now_ms(), pkts, empty);
+	if (v == FN_ISO_OK)
+		return;
+	if (v == FN_ISO_NO_DATA) {
+		FN_WARNING("The Kinect's %s stream delivers no data: %u of %u isochronous packets in the last %d s were empty or failed.\n",
+		           what, strm->diag.last_empty, strm->diag.last_pkts, FN_ISO_WINDOW_MS / 1000);
+	} else {
+		FN_NOTICE("The Kinect's %s stream is losing data: %u of %u isochronous packets in the last %d s were empty or failed.\n",
+		          what, strm->diag.last_empty, strm->diag.last_pkts, FN_ISO_WINDOW_MS / 1000);
+	}
+	if (fn_detect_vm(vm, sizeof(vm)))
+		FN_WARNING("This looks like a virtual machine (%s). USB passthrough often can't carry isochronous transfers "
+		           "(usbip in WSL2, emulated EHCI/xHCI controllers). Use the Kinect on the host, or pass a whole USB "
+		           "controller through to the VM (PCI passthrough). See \"Troubleshooting\" in libfreenect's README.\n", vm);
+	else
+		FN_WARNING("Plug the Kinect into a port directly on the computer (no hub, no extension), with its power supply "
+		           "connected; if that doesn't help, try a port on another USB controller. See \"Troubleshooting\" in "
+		           "libfreenect's README.\n");
+}
+
 static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 {
 	int i;
@@ -944,6 +971,7 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 		case LIBUSB_TRANSFER_COMPLETED: // Normal operation.
 		{
 			uint8_t *buf = (uint8_t*)xfer->buffer;
+			int empty = 0;
 			for (i=0; i<strm->pkts; i++) {
 				// A completed transfer can still contain packets that failed or
 				// were never filled (missed microframes, especially with WinUSB).
@@ -954,9 +982,12 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 				int len = (desc->status == LIBUSB_TRANSFER_COMPLETED) ? (int)desc->actual_length : 0;
 				if (len == 0 && desc->status != LIBUSB_TRANSFER_COMPLETED)
 					FN_SPEW("EP %02x: skipping iso packet %d with status %d\n", xfer->endpoint, i, desc->status);
+				if (len == 0)
+					empty++;
 				strm->cb(strm->parent->parent, buf, len);
 				buf += strm->len;
 			}
+			iso_diag_count(ctx, strm, strm->pkts, empty);
 			int res;
 			res = libusb_submit_transfer(xfer);
 			if (res != 0) {
@@ -1005,6 +1036,7 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 			// the transfers, eventually all of them die and then we don't get
 			// any more data from the Kinect.
 			FN_WARNING("Isochronous transfer error: %d\n", xfer->status);
+			iso_diag_count(ctx, strm, strm->pkts, strm->pkts);
 			int res;
 			res = libusb_submit_transfer(xfer);
 			if (res != 0) {
@@ -1045,6 +1077,8 @@ FN_INTERNAL int fnusb_start_iso(fnusb_dev *dev, fnusb_isoc_stream *strm, fnusb_i
 	strm->xfers = (struct libusb_transfer**)calloc(xfers, sizeof(struct libusb_transfer*));
 	strm->dead = 0;
 	strm->dead_xfers = 0;
+	strm->endpoint = endpoint;
+	memset(&strm->diag, 0, sizeof(strm->diag));
 	if (!strm->buffer || !strm->xfers)
 	{
 		FN_ERROR("Failed to allocate isochronous buffers for endpoint %02x\n", endpoint);

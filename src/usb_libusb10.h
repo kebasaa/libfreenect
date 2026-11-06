@@ -74,6 +74,25 @@ typedef struct {
 	int PID;
 } fnusb_dev;
 
+// Isochronous stream health (iso_diag.c): empty or failed packets are counted
+// in windows of FN_ISO_WINDOW_MS; the first window after a start is ignored.
+#define FN_ISO_WINDOW_MS 2000
+#define FN_ISO_NO_DATA_PERCENT 95 // at least this many empty: no data arrives
+#define FN_ISO_LOSS_PERCENT 20    // at least this many empty: heavy loss
+typedef enum { FN_ISO_OK = 0, FN_ISO_NO_DATA = 1, FN_ISO_HEAVY_LOSS = 2 } fn_iso_verdict;
+typedef struct {
+	uint64_t window_start_ms;
+	uint32_t pkts, empty;           // current window
+	uint32_t last_pkts, last_empty; // last complete window
+	int windows;
+	int reported;                   // bit per fn_iso_verdict already reported
+} fn_iso_diag;
+// Count pkts packets, empty of them without data. Returns a verdict when a
+// window completes with a problem not yet reported since the stream started.
+fn_iso_verdict fn_iso_diag_add(fn_iso_diag *d, uint64_t now_ms, int pkts, int empty);
+// 1 (and a description in name) if this looks like a virtual machine or WSL2.
+int fn_detect_vm(char *name, int size);
+
 typedef struct {
 	fnusb_dev *parent; //so we can go up from the libusb userdata
 	struct libusb_transfer **xfers;
@@ -84,6 +103,8 @@ typedef struct {
 	int len;
 	int dead;
 	int dead_xfers;
+	unsigned char endpoint;
+	fn_iso_diag diag;
 } fnusb_isoc_stream;
 
 int fnusb_num_devices(freenect_context *ctx);
