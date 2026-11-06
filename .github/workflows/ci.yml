@@ -175,8 +175,14 @@ jobs:
             echo "::notice::v4l2loopback can't be loaded on this runner; the freenect-v4l2 end-to-end test was skipped"
             exit 0
           fi
-          sudo chmod 666 /dev/video10 /dev/video11
           fail() { echo "::error title=freenect-v4l2 end-to-end::$*"; exit 1; }
+          # udev creates the device nodes after modprobe returns and sets them
+          # to root:video 0660; let it finish before opening them up.
+          sudo udevadm settle --timeout=30
+          sudo chmod 666 /dev/video10 /dev/video11
+          for n in 10 11; do
+            [ -r /dev/video$n ] && [ -w /dev/video$n ] || fail "/dev/video$n is not accessible: $(ls -l /dev/video$n 2>&1)"
+          done
           # The writer runs until this step stops it: with exclusive_caps=1, a
           # loopback device only accepts readers while something writes to it.
           timeout 60 ./build/bin/freenect-v4l2 --test-pattern --depth /dev/video10 --video /dev/video11 \
