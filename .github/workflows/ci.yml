@@ -389,11 +389,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Registers QEMU for 32-bit ARM binaries (what docker/setup-qemu-action
+      # does, without its Node 20 runtime).
       - name: Set up QEMU
         if: matrix.qemu
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm
+        run: docker run --privileged --rm tonistiigi/binfmt --install arm
 
       - name: Build, test and package in ${{ matrix.image }} (${{ matrix.platform }})
         run: >
