@@ -176,20 +176,30 @@ jobs:
             exit 0
           fi
           sudo chmod 666 /dev/video10 /dev/video11
-          ./build/bin/freenect-v4l2 --test-pattern --frames 300 --depth /dev/video10 --video /dev/video11 &
+          fail() { echo "::error title=freenect-v4l2 end-to-end::$*"; exit 1; }
+          # The writer runs until this step stops it: with exclusive_caps=1, a
+          # loopback device only accepts readers while something writes to it.
+          timeout 60 ./build/bin/freenect-v4l2 --test-pattern --depth /dev/video10 --video /dev/video11 \
+            > "$RUNNER_TEMP/writer.log" 2>&1 &
           writer=$!
           sleep 2
-          v4l2-ctl -d /dev/video10 --get-fmt-video | tee "$RUNNER_TEMP/depth-fmt.txt"
-          v4l2-ctl -d /dev/video11 --get-fmt-video | tee "$RUNNER_TEMP/video-fmt.txt"
-          grep -q "640/480" "$RUNNER_TEMP/depth-fmt.txt" && grep -q "Y16" "$RUNNER_TEMP/depth-fmt.txt"
-          grep -q "640/480" "$RUNNER_TEMP/video-fmt.txt" && grep -q "YUYV" "$RUNNER_TEMP/video-fmt.txt"
-          timeout 20 ffmpeg -nostdin -loglevel error -f v4l2 -i /dev/video11 -frames:v 3 -f rawvideo -y "$RUNNER_TEMP/video.raw"
-          timeout 20 ffmpeg -nostdin -loglevel error -f v4l2 -i /dev/video10 -frames:v 3 -f rawvideo -y "$RUNNER_TEMP/depth.raw"
-          ls -l "$RUNNER_TEMP/video.raw" "$RUNNER_TEMP/depth.raw"
-          test "$(stat -c %s "$RUNNER_TEMP/video.raw")" -eq $((3 * 640 * 480 * 2))
-          test "$(stat -c %s "$RUNNER_TEMP/depth.raw")" -eq $((3 * 640 * 480 * 2))
-          kill -INT "$writer" 2>/dev/null || true  # it may have finished its frames already
-          wait "$writer"
+          kill -0 "$writer" 2>/dev/null || fail "freenect-v4l2 exited early: $(tr '\n' ' ' < "$RUNNER_TEMP/writer.log")"
+          for n in 10 11; do
+            v4l2-ctl -d /dev/video$n --get-fmt-video > "$RUNNER_TEMP/fmt$n.txt" 2>&1 || fail "v4l2-ctl /dev/video$n: $(tr '\n' ' ' < "$RUNNER_TEMP/fmt$n.txt")"
+            cat "$RUNNER_TEMP/fmt$n.txt"
+          done
+          grep -q "640/480" "$RUNNER_TEMP/fmt10.txt" && grep -q "Y16" "$RUNNER_TEMP/fmt10.txt" || fail "depth device format: $(tr '\n' ' ' < "$RUNNER_TEMP/fmt10.txt")"
+          grep -q "640/480" "$RUNNER_TEMP/fmt11.txt" && grep -q "YUYV" "$RUNNER_TEMP/fmt11.txt" || fail "video device format: $(tr '\n' ' ' < "$RUNNER_TEMP/fmt11.txt")"
+          for n in 11 10; do
+            timeout 20 ffmpeg -nostdin -loglevel error -f v4l2 -i /dev/video$n -frames:v 3 -f rawvideo -y "$RUNNER_TEMP/frames$n.raw" \
+              2> "$RUNNER_TEMP/ffmpeg$n.log" || fail "ffmpeg on /dev/video$n: exit $? $(tail -n 3 "$RUNNER_TEMP/ffmpeg$n.log" | tr '\n' ' ')"
+            size=$(stat -c %s "$RUNNER_TEMP/frames$n.raw")
+            echo "/dev/video$n: $size bytes in 3 frames"
+            test "$size" -eq $((3 * 640 * 480 * 2)) || fail "/dev/video$n: $size bytes in 3 frames, expected $((3 * 640 * 480 * 2))"
+          done
+          kill -INT "$writer"
+          wait "$writer" || fail "freenect-v4l2 did not stop cleanly on SIGINT: $(tail -n 3 "$RUNNER_TEMP/writer.log" | tr '\n' ' ')"
+          cat "$RUNNER_TEMP/writer.log"
 
       - name: Check the udev rules and the systemd unit
         run: |
@@ -255,20 +265,22 @@ jobs:
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           -DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_FAKENECT=ON
-          -DCMAKE_C_FLAGS="-Wall -Wextra" -DCMAKE_CXX_FLAGS="-Wall -Wextra"
+          -DFREENECT_WERROR=ON
 
-      # Apple Clang's warnings become annotations (readable without the log);
-      # once there are none, this job switches to FREENECT_WERROR=ON.
+      # With -Werror; compiler diagnostics also become annotations, which can
+      # be read without the job log.
       - name: Build
         run: |
-          set -o pipefail
+          set +e
           cmake --build build --parallel 2>&1 | tee "$RUNNER_TEMP/build.log"
-          grep -E '^/[^:]+:[0-9]+:[0-9]+: warning: ' "$RUNNER_TEMP/build.log" | sort -u > "$RUNNER_TEMP/warnings.txt" || true
-          echo "$(wc -l < "$RUNNER_TEMP/warnings.txt") compiler warnings"
-          head -50 "$RUNNER_TEMP/warnings.txt" | while IFS= read -r w; do
+          status=${PIPESTATUS[0]}
+          grep -E '^/[^:]+:[0-9]+:[0-9]+: (warning|error): ' "$RUNNER_TEMP/build.log" | sort -u > "$RUNNER_TEMP/diagnostics.txt"
+          echo "$(wc -l < "$RUNNER_TEMP/diagnostics.txt") compiler diagnostics"
+          head -50 "$RUNNER_TEMP/diagnostics.txt" | while IFS= read -r w; do
             f=${w%%:*}; rest=${w#*:}; line=${rest%%:*}
-            echo "::warning file=${f#$PWD/},line=${line}::${w#*warning: }"
+            echo "::error file=${f#$PWD/},line=${line}::${w#*: }"
           done
+          exit "$status"
 
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure

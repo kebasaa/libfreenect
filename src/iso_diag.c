@@ -75,6 +75,7 @@ fn_iso_verdict fn_iso_diag_add(fn_iso_diag *d, uint64_t now_ms, int pkts, int em
 	return v;
 }
 
+#if !defined(__APPLE__) /* macOS asks the kernel instead (kern.hv_vmm_present) */
 // Case-insensitive substring search.
 static int contains_ci(const char *haystack, const char *needle)
 {
@@ -105,6 +106,7 @@ static int names_vm(const char *s, char *name, int size)
 	}
 	return 0;
 }
+#endif
 
 #if !defined(_WIN32) && !defined(__APPLE__)
 static void read_line(const char *path, char *buf, int size)
