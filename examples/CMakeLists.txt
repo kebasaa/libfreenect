@@ -16,28 +16,17 @@ target_link_libraries(freenect-hotplug freenect)
 install(TARGETS freenect-camtest freenect-wavrecord freenect-fwloader freenect-hotplug
         DESTINATION bin)
 
-# Most viewers need pthreads and GLUT.
+# The OpenGL viewers need pthreads, OpenGL, and GLFW or GLUT
+# (FREENECT_GL_VIEWERS, cmake_modules/FreenectGLViewers.cmake).
 set(THREADS_USE_PTHREADS_WIN32 true)
 find_package(Threads)
-find_package(OpenGL COMPONENTS OpenGL)
-find_package(GLUT)
 
-if (Threads_FOUND AND OpenGL_OpenGL_FOUND AND GLUT_FOUND)
-  include_directories(${THREADS_PTHREADS_INCLUDE_DIR} ${OPENGL_INCLUDE_DIR} ${GLUT_INCLUDE_DIR})
-
-  add_executable(freenect-glview glview.c)
-  add_executable(freenect-regview regview.c)
-  add_executable(freenect-hiview hiview.c)
-  add_executable(freenect-chunkview chunkview.c)
-  add_executable(freenect-micview micview.c)
-
-  include(ChooseOpenGLTarget)
-  target_link_libraries(freenect-glview freenect "${OPENGL_TARGET}" GLUT::GLUT ${CMAKE_THREAD_LIBS_INIT} ${MATH_LIB})
-  target_link_libraries(freenect-regview freenect "${OPENGL_TARGET}" GLUT::GLUT ${CMAKE_THREAD_LIBS_INIT} ${MATH_LIB})
-  target_link_libraries(freenect-hiview freenect "${OPENGL_TARGET}" GLUT::GLUT ${CMAKE_THREAD_LIBS_INIT} ${MATH_LIB})
-  target_link_libraries(freenect-chunkview freenect "${OPENGL_TARGET}" GLUT::GLUT ${CMAKE_THREAD_LIBS_INIT} ${MATH_LIB})
-  target_link_libraries(freenect-micview freenect "${OPENGL_TARGET}" GLUT::GLUT ${CMAKE_THREAD_LIBS_INIT} ${MATH_LIB})
-
+if (Threads_FOUND AND FREENECT_GL_BACKEND)
+  include_directories(${THREADS_PTHREADS_INCLUDE_DIR})
+  foreach (viewer glview regview hiview chunkview micview)
+    freenect_gl_viewer(freenect-${viewer} ${viewer}.c)
+    target_link_libraries(freenect-${viewer} freenect ${CMAKE_THREAD_LIBS_INIT} ${MATH_LIB})
+  endforeach ()
   install(TARGETS freenect-glview freenect-regview freenect-hiview freenect-chunkview freenect-micview
           DESTINATION bin)
 endif ()
@@ -55,11 +44,9 @@ if (BUILD_C_SYNC)
   install(TARGETS freenect-regtest freenect-tiltdemo
           DESTINATION bin)
 
-  if (OpenGL_OpenGL_FOUND AND GLUT_FOUND)
-    include_directories(${OPENGL_INCLUDE_DIR} ${GLUT_INCLUDE_DIR})
-    add_executable(freenect-glpclview glpclview.c)
-    include(ChooseOpenGLTarget)
-    target_link_libraries(freenect-glpclview freenect_sync "${OPENGL_TARGET}" GLUT::GLUT ${MATH_LIB})
+  if (FREENECT_GL_BACKEND AND FREENECT_GL_HAVE_GLU)
+    freenect_gl_viewer(freenect-glpclview glpclview.c)
+    target_link_libraries(freenect-glpclview freenect_sync ${MATH_LIB})
     install(TARGETS freenect-glpclview
             DESTINATION bin)
   endif ()

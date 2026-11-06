@@ -24,7 +24,8 @@ To build libfreenect, you'll need
 For the examples, you'll need
 
 - OpenGL   (included with OSX)
-- glut     (included with OSX)
+- [GLFW](https://www.glfw.org) >= 3.3 for the viewers' windows; it runs natively on Wayland, X11, macOS and Windows.
+  GLUT (freeglut) still works instead: `-DFREENECT_GL_VIEWERS=GLUT`. `AUTO` (the default) takes GLFW if it's there, else GLUT; `OFF` skips the viewers.
 - [pthreads-win32](http://sourceforge.net/projects/pthreads4w/) (Windows, optional: without it, a built-in header-only pthread subset over native Win32 threads is used)
 
 ## <a name="fetch-build"></a>Fetch & Build
@@ -89,6 +90,7 @@ These change libfreenect's behaviour for every application:
 | `LIBFREENECT_FIRMWARE_PATH=DIR` | Looks for the audio firmware in `DIR` first |
 | `LIBFREENECT_AUDIO_FIRMWARE=uac` or `=xbox` | Loads only Microsoft's `UACFirmware.bin`, or only the Xbox `audios.bin` |
 | `LIBFREENECT_USBDK=1` | Windows: uses libusb's UsbDk backend instead of WinUSB |
+| `LIBFREENECT_GLFW_PLATFORM=x11` or `=wayland` | Linux: the window system the viewers use (GLFW 3.4 and newer prefer Wayland) |
 | `LIBFREENECT_HOTPLUG_POLL=1` | Finds Kinects being plugged in and out by scanning once a second, instead of through libusb's hotplug events (for example in a VM or container where those don't arrive) |
 | `LIBFREENECT_WINDOWS_AUDIO_UNSAFE=1` | Windows: allows libfreenect's own audio streaming. It's disabled because it hung a test machine; only use it on a machine you can hard-reset |
 
@@ -124,7 +126,7 @@ Continue with this section for a manual build.
     sudo apt-get install git cmake build-essential libusb-1.0-0-dev
 
     # only if you are building the examples:
-    sudo apt-get install freeglut3-dev libxmu-dev libxi-dev
+    sudo apt-get install libglfw3-dev libgl-dev libglu1-mesa-dev
 
 Continue with [Fetch & Build](#fetch-build).
 
@@ -153,7 +155,7 @@ The old libusb-win32 (libusb0) driver cannot stream video or depth.
 If you have [UsbDk](https://github.com/daynix/UsbDk) installed instead, set the environment variable `LIBFREENECT_USBDK=1` to make libusb use it.
 
 Follow [Fetch & Build](#fetch-build) or use Github and CMake GUI tools.
-pthreads-win32 is optional (see above), so MSVC builds of the wrappers and examples need only libusb and, for the viewers, GLUT.
+pthreads-win32 is optional (see above), so MSVC builds of the wrappers and examples need only libusb and, for the viewers, GLFW (the vcpkg manifest's `examples` feature brings both).
 Remember to supply paths to CMake so it can find dependencies.
 For example:
 

@@ -42,6 +42,13 @@ jobs:
         if: matrix.arch == 'x64'
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - name: OpenGL viewers were built (GLFW)
+        shell: pwsh
+        run: |
+          foreach ($v in 'glview','regview','hiview','chunkview','micview','glpclview','cppview','cpp_pcview') {
+            if (-not (Test-Path "build\bin\Release\freenect-$v.exe")) { throw "freenect-$v.exe was not built" }
+          }
+
       - name: Smoke tests (no Kinect attached)
         if: matrix.arch == 'x64'
         shell: pwsh
@@ -96,7 +103,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake build-essential pkg-config \
-            libusb-1.0-0-dev freeglut3-dev libgl1-mesa-dev libglu1-mesa-dev
+            libusb-1.0-0-dev libglfw3-dev freeglut3-dev libgl1-mesa-dev libglu1-mesa-dev \
+            xvfb xauth libgl1-mesa-dri
 
       - name: Configure
         run: >
@@ -108,7 +116,18 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Unit tests
-        run: ctest --test-dir build --output-on-failure
+        # under Xvfb, so that the viewers' window layer is tested too
+        run: xvfb-run -a ctest --test-dir build --output-on-failure
+
+      - name: OpenGL viewers were built (GLFW), and with GLUT instead
+        run: |
+          set -e
+          for v in glview regview hiview chunkview micview glpclview cppview cpp_pcview; do
+            test -x build/bin/freenect-$v || { echo "freenect-$v was not built"; exit 1; }
+          done
+          cmake -S . -B build-glut -DCMAKE_BUILD_TYPE=Release -DFREENECT_GL_VIEWERS=GLUT \
+            -DBUILD_FAKENECT=OFF -DBUILD_TESTS=OFF -DINSTALL_LINUX_INTEGRATION=OFF
+          cmake --build build-glut --parallel --target freenect-glview freenect-hiview freenect-glpclview freenect-cppview
 
       - name: Smoke test (no Kinect attached)
         run: |
@@ -184,7 +203,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install dependencies
-        run: brew install libusb
+        run: brew install libusb glfw
 
       - name: Configure
         run: >
@@ -196,6 +215,12 @@ jobs:
 
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
+
+      - name: OpenGL viewers were built (GLFW)
+        run: |
+          for v in glview regview hiview chunkview micview glpclview cppview cpp_pcview; do
+            test -x build/bin/freenect-$v || { echo "freenect-$v was not built"; exit 1; }
+          done
 
       - name: Smoke test (no Kinect attached)
         run: |

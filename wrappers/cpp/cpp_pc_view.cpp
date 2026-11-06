@@ -29,11 +29,7 @@
 #include <vector>
 #include <libfreenect.hpp>
 
-#if defined(__APPLE__)
-#include <GLUT/glut.h>
-#else
-#include <GL/glut.h>
-#endif
+#include "fn_glut.h" // GLFW, or GLUT with -DFREENECT_GL_VIEWERS=GLUT
 
 
 class Mutex

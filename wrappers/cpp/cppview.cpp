@@ -31,13 +31,7 @@
 #include <cmath>
 #include <vector>
 
-#if defined(__APPLE__)
-#include <GLUT/glut.h>
-#include <OpenGL/gl.h>
-#else
-#include <GL/glut.h>
-#include <GL/gl.h>
-#endif
+#include "fn_glut.h" // GLFW, or GLUT with -DFREENECT_GL_VIEWERS=GLUT
 
 
 class Mutex {
