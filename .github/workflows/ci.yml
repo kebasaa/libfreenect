@@ -239,3 +239,54 @@ jobs:
             took=$(( $(date +%s) - start ))
             { test "$code" -eq 0 && test "$took" -le 5; } || { echo "freenect-hotplug ($mode): exit $code after ${took}s"; exit 1; }
           done
+
+  # The supported Linux releases that GitHub has no runners for, in containers.
+  # Raspberry Pi OS is Debian with Raspberry Pi's repository on top
+  # (.github/ci/linux-distro.sh adds it). The armhf job runs Debian's ARMv7
+  # port under QEMU (GitHub's arm64 runners can't run 32-bit ARM code); it
+  # stands in for 32-bit Pi OS on a Pi 2 or newer.
+  linux-distros:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.qemu && 120 || 45 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu rolling (x64)
+            image: ubuntu:rolling
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - name: Ubuntu 26.04 LTS (x64)
+            image: ubuntu:26.04
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - name: Debian 13 trixie (x64)
+            image: debian:trixie
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - name: Raspberry Pi OS trixie (arm64)
+            image: debian:trixie
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            rpi: 1
+          - name: Raspberry Pi OS trixie (armhf, QEMU)
+            image: debian:trixie
+            runner: ubuntu-24.04
+            platform: linux/arm/v7
+            rpi: 1
+            qemu: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        if: matrix.qemu
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm
+
+      - name: Build, test and package in ${{ matrix.image }} (${{ matrix.platform }})
+        run: >
+          docker run --rm --platform ${{ matrix.platform }}
+          -e RPI=${{ matrix.rpi || 0 }} -v "$PWD:/src" -w /src
+          ${{ matrix.image }} sh .github/ci/linux-distro.sh
