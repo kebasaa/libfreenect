@@ -44,6 +44,11 @@ install (TARGETS freenectstatic
 
 target_link_libraries (freenect ${LIBUSB_1_LIBRARIES})
 target_link_libraries (freenectstatic ${LIBUSB_1_LIBRARIES})
+if (UNIX)
+  # libm: lround() in tilt.c, and the math in registration.c
+  target_link_libraries (freenect m)
+  target_link_libraries (freenectstatic m)
+endif ()
 
 # Install the header files
 install (FILES "../include/libfreenect.h" "../include/libfreenect_registration.h" "../include/libfreenect_audio.h"
