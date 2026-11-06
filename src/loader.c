@@ -171,11 +171,13 @@ static FILE *open_firmware_file(freenect_context *ctx, const char *filename) {
 	 *   <directory of the executable>       (Windows)
 	 *   %ProgramData%\libfreenect           (Windows)
 	 *   <each $XDG_DATA_DIRS entry>/libfreenect              (not Windows)
+	 *   ${HOME}/Library/Application Support/libfreenect      (macOS)
+	 *   /opt/homebrew/share/libfreenect     (macOS, Homebrew on Apple Silicon)
 	 *   /usr/local/share/libfreenect
 	 *   /usr/share/libfreenect
 	 *   ./../Resources                      (OS X)
 	 */
-	enum { MAX_CANDIDATES = 16 };
+	enum { MAX_CANDIDATES = 18 };
 	char candidates[MAX_CANDIDATES][1024];
 	int count = 0;
 	int i;
@@ -219,6 +221,10 @@ static FILE *open_firmware_file(freenect_context *ctx, const char *filename) {
 			dirs = end ? end + 1 : NULL;
 		}
 	}
+#endif
+#ifdef __APPLE__
+	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, getenv("HOME"), "/Library/Application Support/libfreenect", filename);
+	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, "/opt/homebrew/share/libfreenect", NULL, filename);
 #endif
 	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, "/usr/local/share/libfreenect", NULL, filename);
 	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, "/usr/share/libfreenect", NULL, filename);

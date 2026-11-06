@@ -152,6 +152,10 @@ IF(PROJECT_OS_LINUX AND INSTALL_LINUX_INTEGRATION)
   add_subdirectory (platform/linux)
 ENDIF()
 
+IF(APPLE)
+  add_subdirectory (platform/macos)
+ENDIF()
+
 IF(BUILD_EXAMPLES)
   # Window library of the OpenGL viewers (examples/ and wrappers/cpp/)
   include (FreenectGLViewers)

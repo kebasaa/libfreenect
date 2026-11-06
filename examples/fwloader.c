@@ -35,7 +35,7 @@
  * Windows and model 1473, the motor and LED) is ready before an application
  * starts.
  *
- * Usage: freenect-fwloader [--firmware FILE] [--wait SECONDS] [--verbose]
+ * Usage: freenect-fwloader [--firmware FILE] [--wait SECONDS] [--launchd] [--verbose]
  *   Without --firmware, the image is chosen as in upload_default_firmware()
  *   (src/loader.c): UACFirmware.bin or audios.bin, from the usual places or
  *   $LIBFREENECT_FIRMWARE_PATH; LIBFREENECT_AUDIO_FIRMWARE=uac|xbox forces one.
@@ -43,9 +43,11 @@
  *   giving up. A plug-in trigger (the Linux udev rule and systemd unit in
  *   platform/linux) fires when the audio controller appears, which can be
  *   before the camera, which libfreenect uses to count sensors, is ready.
+ *   --launchd (macOS): started by the launchd agent in platform/macos for an
+ *   IOKit match; receives the match event, which launchd requires.
  */
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
 #define _POSIX_C_SOURCE 200809L /* nanosleep */
 #endif
 #include <stdio.h>
@@ -63,6 +65,19 @@ static void sleep_ms(int ms)
 	ts.tv_sec = ms / 1000;
 	ts.tv_nsec = (long)(ms % 1000) * 1000000L;
 	nanosleep(&ts, NULL);
+}
+#endif
+
+#ifdef __APPLE__
+#include <xpc/xpc.h>
+#include <dispatch/dispatch.h>
+/* A launchd job started by a com.apple.iokit.matching event has to receive
+ * the event; otherwise launchd starts it again and again. */
+static void launchd_check_in(void)
+{
+	xpc_set_event_stream_handler("com.apple.iokit.matching",
+	                             dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),
+	                             ^(xpc_object_t event) { (void)event; });
 }
 #endif
 
@@ -92,7 +107,7 @@ int main(int argc, char **argv)
 	unsigned char *fw = NULL;
 	unsigned int fw_size = 0;
 	const char *fw_path = NULL;
-	int verbose = 0, wait_s = 0, waited_ms, i, n, failed = 0;
+	int verbose = 0, wait_s = 0, launchd = 0, waited_ms, i, n, failed = 0;
 
 	for (i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "--firmware") == 0 && i + 1 < argc) {
@@ -103,13 +118,27 @@ int main(int argc, char **argv)
 			if (wait_s > 60) wait_s = 60;
 		} else if (strcmp(argv[i], "--verbose") == 0) {
 			verbose = 1;
+		} else if (strcmp(argv[i], "--launchd") == 0) {
+#ifdef __APPLE__
+			launchd = 1;
+#else
+			fprintf(stderr, "--launchd is for macOS only\n");
+			return 1;
+#endif
 		} else {
-			printf("Usage: %s [--firmware FILE] [--wait SECONDS] [--verbose]\n"
+			printf("Usage: %s [--firmware FILE] [--wait SECONDS] [--launchd] [--verbose]\n"
 			       "Uploads the audio firmware to every connected Kinect that needs it.\n"
-			       "--wait: keep looking for a Kinect for up to SECONDS (max 60).\n", argv[0]);
+			       "--wait: keep looking for a Kinect for up to SECONDS (max 60).\n"
+			       "--launchd: started by the macOS launchd agent (receives its IOKit event).\n", argv[0]);
 			return strcmp(argv[i], "--help") == 0 ? 0 : 1;
 		}
 	}
+
+#ifdef __APPLE__
+	if (launchd)
+		launchd_check_in();
+#endif
+	(void)launchd;
 
 	if (freenect_init(&ctx, NULL) < 0) {
 		fprintf(stderr, "freenect_init() failed\n");

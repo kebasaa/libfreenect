@@ -739,11 +739,15 @@ def fetch_uac_firmware(target, installer_path=None):
 def uac_target(output, user):
     """Where --uac writes the firmware. OUTPUT is a file if it ends in .bin and
     a directory otherwise (created if needed, firmware named UACFirmware.bin);
-    --user means $XDG_DATA_HOME/libfreenect (~/.local/share/libfreenect)."""
+    --user means $XDG_DATA_HOME/libfreenect (~/.local/share/libfreenect), or on
+    macOS ~/Library/Application Support/libfreenect."""
     if user:
-        base = os.environ.get("XDG_DATA_HOME", "")
-        if not base.startswith("/"):
-            base = os.path.join(os.path.expanduser("~"), ".local", "share")
+        if sys.platform == "darwin":
+            base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+        else:
+            base = os.environ.get("XDG_DATA_HOME", "")
+            if not base.startswith("/"):
+                base = os.path.join(os.path.expanduser("~"), ".local", "share")
         output = os.path.join(base, "libfreenect")
     if output is None:
         return "UACFirmware.bin"

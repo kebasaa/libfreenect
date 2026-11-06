@@ -113,6 +113,7 @@ libfreenect watches every stream. When, a few seconds after a stream starts, at 
 
 If you don't have a package manager, install [Homebrew](http://brew.sh/).
 For a manual build, see [the wiki](http://openkinect.org/wiki/Getting_Started#Manual_Build_under_OSX).
+[platform/macos](platform/macos/README.md) covers universal builds, the audio firmware and the launchd agent that loads it whenever the Kinect is plugged in.
 
 ### Homebrew
 

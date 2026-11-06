@@ -229,8 +229,16 @@ jobs:
           test ! -e /usr/lib/udev/rules.d/51-kinect.rules
 
   macos:
-    name: macOS (Apple Silicon)
-    runs-on: macos-latest
+    name: macOS (${{ matrix.cpu }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            cpu: Apple Silicon
+          - os: macos-15-intel
+            cpu: Intel
     steps:
       - uses: actions/checkout@v7
 
@@ -241,9 +249,20 @@ jobs:
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           -DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_FAKENECT=ON
+          -DCMAKE_C_FLAGS="-Wall -Wextra" -DCMAKE_CXX_FLAGS="-Wall -Wextra"
 
+      # Apple Clang's warnings become annotations (readable without the log);
+      # once there are none, this job switches to FREENECT_WERROR=ON.
       - name: Build
-        run: cmake --build build --parallel
+        run: |
+          set -o pipefail
+          cmake --build build --parallel 2>&1 | tee "$RUNNER_TEMP/build.log"
+          grep -E '^/[^:]+:[0-9]+:[0-9]+: warning: ' "$RUNNER_TEMP/build.log" | sort -u > "$RUNNER_TEMP/warnings.txt" || true
+          echo "$(wc -l < "$RUNNER_TEMP/warnings.txt") compiler warnings"
+          head -50 "$RUNNER_TEMP/warnings.txt" | while IFS= read -r w; do
+            f=${w%%:*}; rest=${w#*:}; line=${rest%%:*}
+            echo "::warning file=${f#$PWD/},line=${line}::${w#*warning: }"
+          done
 
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
@@ -254,12 +273,20 @@ jobs:
             test -x build/bin/freenect-$v || { echo "freenect-$v was not built"; exit 1; }
           done
 
+      - name: launchd agent
+        run: |
+          plutil -lint build/platform/macos/org.openkinect.fwloader.plist
+          grep -q "<string>/usr/local/bin/freenect-fwloader</string>" build/platform/macos/org.openkinect.fwloader.plist
+
       - name: Smoke test (no Kinect attached)
         run: |
           set +e
           ./build/bin/freenect-fwloader
           code=$?
           test "$code" -eq 2 || { echo "freenect-fwloader should report no Kinect (exit 2), got $code"; exit 1; }
+          ./build/bin/freenect-fwloader --launchd
+          code=$?
+          test "$code" -eq 2 || { echo "freenect-fwloader --launchd should report no Kinect (exit 2), got $code"; exit 1; }
           for mode in native poll; do
             start=$(date +%s)
             if [ "$mode" = poll ]; then
@@ -271,6 +298,57 @@ jobs:
             took=$(( $(date +%s) - start ))
             { test "$code" -eq 0 && test "$took" -le 5; } || { echo "freenect-hotplug ($mode): exit $code after ${took}s"; exit 1; }
           done
+
+  # One library for both Mac CPUs. Homebrew's libusb has only the runner's
+  # architecture, so libusb is built from source as a universal library.
+  macos-universal:
+    name: macOS universal (arm64 + x86_64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build libusb as a universal library
+        run: |
+          set -e
+          brew install autoconf automake libtool
+          git clone --depth 1 --branch v1.0.29 https://github.com/libusb/libusb "$RUNNER_TEMP/libusb-src"
+          cd "$RUNNER_TEMP/libusb-src"
+          ./bootstrap.sh
+          ./configure --prefix="$RUNNER_TEMP/libusb" --disable-dependency-tracking \
+            CFLAGS="-arch arm64 -arch x86_64 -mmacosx-version-min=11.0" LDFLAGS="-arch arm64 -arch x86_64"
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+          lipo -archs "$RUNNER_TEMP/libusb/lib/libusb-1.0.dylib"
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          -DLIBUSB_1_INCLUDE_DIR="$RUNNER_TEMP/libusb/include/libusb-1.0"
+          -DLIBUSB_1_LIBRARY="$RUNNER_TEMP/libusb/lib/libusb-1.0.dylib"
+          -DFREENECT_GL_VIEWERS=OFF -DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_FAKENECT=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Both architectures are in every binary
+        run: |
+          set -e
+          for f in build/lib/libfreenect.dylib build/lib/libfreenect_sync.dylib build/bin/freenect-fwloader build/bin/freenect-camtest build/bin/freenect-hotplug; do
+            archs=$(lipo -archs "$f")
+            echo "$f: $archs"
+            case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "$f is not universal"; exit 1;; esac
+          done
+
+      - name: Unit tests, natively and under Rosetta
+        run: |
+          set -e
+          ctest --test-dir build --output-on-failure
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            for t in build/bin/test_*; do echo "== $t (x86_64)"; arch -x86_64 "$t" > /dev/null; done
+          else
+            echo "::notice::Rosetta is not available on this runner; the x86_64 slices were not run"
+          fi
 
   # The supported Linux releases that GitHub has no runners for, in containers.
   # Raspberry Pi OS is Debian with Raspberry Pi's repository on top
