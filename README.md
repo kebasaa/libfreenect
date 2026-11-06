@@ -89,6 +89,7 @@ These change libfreenect's behaviour for every application:
 | `LIBFREENECT_FIRMWARE_PATH=DIR` | Looks for the audio firmware in `DIR` first |
 | `LIBFREENECT_AUDIO_FIRMWARE=uac` or `=xbox` | Loads only Microsoft's `UACFirmware.bin`, or only the Xbox `audios.bin` |
 | `LIBFREENECT_USBDK=1` | Windows: uses libusb's UsbDk backend instead of WinUSB |
+| `LIBFREENECT_HOTPLUG_POLL=1` | Finds Kinects being plugged in and out by scanning once a second, instead of through libusb's hotplug events (for example in a VM or container where those don't arrive) |
 | `LIBFREENECT_WINDOWS_AUDIO_UNSAFE=1` | Windows: allows libfreenect's own audio streaming. It's disabled because it hung a test machine; only use it on a machine you can hard-reset |
 
 ## OSX

@@ -61,6 +61,9 @@ FREENECTAPI int freenect_init(freenect_context **ctx, freenect_usb_context *usb_
 
 FREENECTAPI int freenect_shutdown(freenect_context *ctx)
 {
+	fnusb_hotplug_deregister(ctx);
+	ctx->hotplug.cb = NULL;
+
 	while (ctx->first) {
 		FN_NOTICE("Device %p open during shutdown, closing...\n", ctx->first);
 		freenect_close_device(ctx->first);
@@ -69,6 +72,67 @@ FREENECTAPI int freenect_shutdown(freenect_context *ctx)
 	fnusb_shutdown(&ctx->usb);
 	free(ctx);
 	return 0;
+}
+
+FREENECTAPI int freenect_set_hotplug_callback(freenect_context *ctx, freenect_hotplug_cb cb, void *user)
+{
+	if (!cb) {
+		fnusb_hotplug_deregister(ctx);
+		memset(&ctx->hotplug, 0, sizeof(ctx->hotplug));
+		return 0;
+	}
+	if (!ctx->hotplug.cb) {
+		// Start from nothing known, so that the first scan reports every
+		// Kinect that is already connected.
+		memset(&ctx->hotplug, 0, sizeof(ctx->hotplug));
+		ctx->hotplug.dirty = 1;
+		fnusb_hotplug_register(ctx);
+	}
+	ctx->hotplug.cb = cb;
+	ctx->hotplug.user = user;
+	return 0;
+}
+
+FREENECTAPI int freenect_device_connected(freenect_device *dev)
+{
+	return !(dev->usb_cam.device_dead || dev->usb_motor.device_dead || dev->usb_audio.device_dead);
+}
+
+// Rescan when libusb reported a Kinect arriving or leaving, or (without
+// libusb hotplug) once every FN_HOTPLUG_POLL_MS. Open devices whose camera
+// left are marked as disconnected.
+static int hotplug_scan(freenect_context *ctx, fn_hotplug_change *changes, int max_changes)
+{
+	fn_hotplug_entry now[FN_HOTPLUG_MAX];
+	uint64_t t = fn_now_ms();
+	int n, nch, i;
+	freenect_device *dev;
+
+	if (!ctx->hotplug.cb)
+		return 0;
+	if (!ctx->hotplug.dirty && (ctx->hotplug.native || t - ctx->hotplug.last_scan_ms < FN_HOTPLUG_POLL_MS))
+		return 0;
+	ctx->hotplug.dirty = 0;
+	ctx->hotplug.last_scan_ms = t;
+
+	n = fnusb_scan_cameras(ctx, now, FN_HOTPLUG_MAX);
+	if (n < 0) {
+		FN_WARNING("Hotplug: cannot list USB devices (%d)\n", n);
+		return 0;
+	}
+	nch = fn_hotplug_update(&ctx->hotplug, now, n, changes, max_changes);
+	for (i = 0; i < nch; i++) {
+		if (changes[i].event != FREENECT_HOTPLUG_LEFT)
+			continue;
+		for (dev = ctx->first; dev; dev = dev->next) {
+			if (dev->cam_bus == changes[i].dev.bus && dev->cam_addr == changes[i].dev.addr) {
+				dev->usb_cam.device_dead = 1;
+				dev->usb_motor.device_dead = 1;
+				dev->usb_audio.device_dead = 1;
+			}
+		}
+	}
+	return nch;
 }
 
 FREENECTAPI int freenect_process_events(freenect_context *ctx)
@@ -81,22 +145,50 @@ FREENECTAPI int freenect_process_events(freenect_context *ctx)
 
 FREENECTAPI int freenect_process_events_timeout(freenect_context *ctx, struct timeval *timeout)
 {
-	int res = fnusb_process_events_timeout(&ctx->usb, timeout);
-	// Iterate over the devices in ctx.  If any of them are flagged as
+	fn_hotplug_change changes[2 * FN_HOTPLUG_MAX];
+	struct timeval capped;
+	int nch, i, res;
+
+	// Without libusb hotplug, come back at least once per scan interval.
+	if (ctx->hotplug.cb && !ctx->hotplug.native && timeout &&
+	    (timeout->tv_sec > 1 || (timeout->tv_sec == 1 && timeout->tv_usec > 0))) {
+		capped.tv_sec = 1;
+		capped.tv_usec = 0;
+		timeout = &capped;
+	}
+	res = fnusb_process_events_timeout(&ctx->usb, timeout);
+	nch = hotplug_scan(ctx, changes, 2 * FN_HOTPLUG_MAX);
+
+	// Stop the streams of devices that were unplugged, once. Without a hotplug
+	// callback, report the loss as an error (as libfreenect always did); with
+	// one, the application learns about it from the callback.
 	freenect_device* dev = ctx->first;
 	while(dev) {
-		if (dev->usb_cam.device_dead) {
-			FN_ERROR("USB camera marked dead, stopping streams\n");
-			res = -1;
-			freenect_stop_video(dev);
-			freenect_stop_depth(dev);
-		}
-		if (dev->usb_audio.device_dead) {
-			FN_ERROR("USB audio marked dead, stopping streams\n");
-			res = -1; // Or something else to tell the user that the device just vanished.
-			freenect_stop_audio(dev);
+		if (!freenect_device_connected(dev)) {
+			if (!ctx->hotplug.cb)
+				res = -1;
+			if (!dev->disconnect_handled) {
+				dev->disconnect_handled = 1;
+				FN_ERROR("Kinect disconnected, stopping its streams\n");
+				if (dev->usb_cam.dev) {
+					freenect_stop_video(dev);
+					freenect_stop_depth(dev);
+				}
+				if (dev->usb_audio.dev)
+					freenect_stop_audio(dev);
+			}
 		}
 		dev = dev->next;
+	}
+
+	// Last, as the callback may open and close devices.
+	for (i = 0; i < nch; i++) {
+		FN_INFO("Hotplug: Kinect %s %s (bus %u, address %u)\n",
+		        changes[i].dev.serial[0] ? changes[i].dev.serial : "(serial unknown)",
+		        changes[i].event == FREENECT_HOTPLUG_ARRIVED ? "arrived" : "left",
+		        changes[i].dev.bus, changes[i].dev.addr);
+		if (ctx->hotplug.cb)
+			ctx->hotplug.cb(ctx, changes[i].event, changes[i].dev.serial, ctx->hotplug.user);
 	}
 	return res;
 }

@@ -299,6 +299,57 @@ FREENECTAPI int freenect_list_device_attributes(freenect_context *ctx, struct fr
  */
 FREENECTAPI void freenect_free_device_attributes(struct freenect_device_attributes* attribute_list);
 
+/// Events reported by the hotplug callback
+typedef enum {
+	FREENECT_HOTPLUG_ARRIVED = 1, /**< A Kinect was connected (or was already connected when the callback was set) */
+	FREENECT_HOTPLUG_LEFT    = 2  /**< A Kinect was disconnected */
+} freenect_hotplug_event;
+
+/**
+ * Hotplug callback. camera_serial is the serial that
+ * freenect_open_device_by_camera_serial() accepts (for the model 1473 and
+ * the Kinect for Windows, the audio controller's serial); it is an empty
+ * string if the serial could not be read, for example because another
+ * program has the camera open. It is valid only during the call.
+ */
+typedef void (*freenect_hotplug_cb)(freenect_context *ctx, freenect_hotplug_event event, const char *camera_serial, void *user);
+
+/**
+ * Report Kinects being connected and disconnected. The callback is called from
+ * freenect_process_events() / freenect_process_events_timeout(), on the
+ * thread that calls them, after the event handling; it may open and close
+ * devices. When it is set, it first reports FREENECT_HOTPLUG_ARRIVED for each
+ * Kinect that is already connected.
+ *
+ * libusb's hotplug support is used where it is available (Linux, macOS);
+ * elsewhere the USB devices are scanned once a second, and
+ * freenect_process_events_timeout() then waits at most one second.
+ *
+ * When a Kinect that is open leaves, its streams are stopped and
+ * freenect_device_connected() returns 0 for it; close it with
+ * freenect_close_device() and open it again when it arrives. While a hotplug
+ * callback is set, freenect_process_events*() does not return an error
+ * because a device left (without one, it does, as before).
+ *
+ * @param ctx Context
+ * @param cb Callback, or NULL to stop reporting
+ * @param user Passed to the callback
+ *
+ * @return 0 on success, < 0 on error
+ */
+FREENECTAPI int freenect_set_hotplug_callback(freenect_context *ctx, freenect_hotplug_cb cb, void *user);
+
+/**
+ * Whether an open device is still connected. A device counts as disconnected
+ * once a transfer to any of its open subdevices failed because the device is
+ * gone, or the hotplug scan saw its camera leave.
+ *
+ * @param dev Open device
+ *
+ * @return 1 if connected, 0 if it was disconnected
+ */
+FREENECTAPI int freenect_device_connected(freenect_device *dev);
+
 /**
  * Answer which subdevices this library supports.  This is most useful for
  * wrappers trying to determine whether the underlying library was built with

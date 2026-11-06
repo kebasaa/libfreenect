@@ -8,10 +8,12 @@ cmake_minimum_required(VERSION 3.10)
 add_executable(freenect-camtest camtest.c)
 add_executable(freenect-wavrecord wavrecord.c)
 add_executable(freenect-fwloader fwloader.c)
+add_executable(freenect-hotplug hotplug.c)
 target_link_libraries(freenect-camtest freenect)
 target_link_libraries(freenect-wavrecord freenect)
 target_link_libraries(freenect-fwloader freenect)
-install(TARGETS freenect-camtest freenect-wavrecord freenect-fwloader
+target_link_libraries(freenect-hotplug freenect)
+install(TARGETS freenect-camtest freenect-wavrecord freenect-fwloader freenect-hotplug
         DESTINATION bin)
 
 # Most viewers need pthreads and GLUT.

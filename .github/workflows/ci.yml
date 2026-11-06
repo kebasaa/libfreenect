@@ -38,6 +38,10 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
+      - name: Unit tests
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir build -C Release --output-on-failure
+
       - name: Smoke tests (no Kinect attached)
         if: matrix.arch == 'x64'
         shell: pwsh
@@ -58,6 +62,10 @@ jobs:
 
           & "$bin\freenect-fwloader.exe"
           if ($LASTEXITCODE -ne 2) { throw "freenect-fwloader should report no Kinect (exit 2), got $LASTEXITCODE" }
+
+          $t = [Diagnostics.Stopwatch]::StartNew()
+          & "$bin\freenect-hotplug.exe" 2 --no-stream
+          if ($LASTEXITCODE -ne 0 -or $t.Elapsed.TotalSeconds -gt 5) { throw "freenect-hotplug: exit $LASTEXITCODE after $($t.Elapsed.TotalSeconds) s" }
           $global:LASTEXITCODE = 0
 
       - name: Collect binaries
@@ -99,6 +107,9 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
       - name: Smoke test (no Kinect attached)
         run: |
           set +e
@@ -111,6 +122,17 @@ jobs:
           took=$(( $(date +%s) - start ))
           test "$code" -eq 2 || { echo "freenect-fwloader --wait 2 should report no Kinect (exit 2), got $code"; exit 1; }
           test "$took" -le 5 || { echo "freenect-fwloader --wait 2 took ${took}s"; exit 1; }
+          for mode in native poll; do
+            start=$(date +%s)
+            if [ "$mode" = poll ]; then
+              LIBFREENECT_HOTPLUG_POLL=1 ./build/bin/freenect-hotplug 2 --no-stream
+            else
+              ./build/bin/freenect-hotplug 2 --no-stream
+            fi
+            code=$?
+            took=$(( $(date +%s) - start ))
+            { test "$code" -eq 0 && test "$took" -le 5; } || { echo "freenect-hotplug ($mode): exit $code after ${took}s"; exit 1; }
+          done
 
       - name: Check the udev rules and the systemd unit
         run: |
@@ -172,9 +194,23 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
       - name: Smoke test (no Kinect attached)
         run: |
           set +e
           ./build/bin/freenect-fwloader
           code=$?
           test "$code" -eq 2 || { echo "freenect-fwloader should report no Kinect (exit 2), got $code"; exit 1; }
+          for mode in native poll; do
+            start=$(date +%s)
+            if [ "$mode" = poll ]; then
+              LIBFREENECT_HOTPLUG_POLL=1 ./build/bin/freenect-hotplug 2 --no-stream
+            else
+              ./build/bin/freenect-hotplug 2 --no-stream
+            fi
+            code=$?
+            took=$(( $(date +%s) - start ))
+            { test "$code" -eq 0 && test "$took" -le 5; } || { echo "freenect-hotplug ($mode): exit $code after ${took}s"; exit 1; }
+          done

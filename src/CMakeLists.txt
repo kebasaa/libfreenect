@@ -20,7 +20,7 @@ ELSE(BUILD_REDIST_PACKAGE)
   install (FILES "${CMAKE_CURRENT_BINARY_DIR}/../audios.bin" DESTINATION "${CMAKE_INSTALL_PREFIX}/share/libfreenect")
 ENDIF()
 
-LIST(APPEND SRC core.c tilt.c cameras.c flags.c usb_libusb10.c registration.c audio.c loader.c kinect_type.c)
+LIST(APPEND SRC core.c tilt.c cameras.c flags.c usb_libusb10.c registration.c audio.c loader.c kinect_type.c hotplug.c)
 
 add_library (freenect SHARED ${SRC})
 set_target_properties ( freenect PROPERTIES

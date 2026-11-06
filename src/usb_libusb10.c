@@ -201,6 +201,73 @@ static fn_kinect_type fnusb_detect_kinect_type(freenect_context *ctx, libusb_dev
 	return type;
 }
 
+// Read the serial that identifies the Kinect whose camera is `camera`:
+// the camera's serial, or for the model 1473 and the Kinect for Windows
+// (whose cameras report 0000000000000000) the audio controller's serial.
+// cam_handle is an open handle to the camera, or NULL to open it here.
+// Returns 0, or < 0 if the camera has no serial or cannot be opened.
+static int fnusb_read_kinect_serial(freenect_context *ctx, libusb_device *camera, libusb_device_handle *cam_handle,
+                                    libusb_device **devs, ssize_t count, char *serial, int size)
+{
+	struct libusb_device_descriptor desc;
+	unsigned char buf[256]; // String descriptors are at most 256 bytes.
+	libusb_device_handle *handle = cam_handle;
+	int res = libusb_get_device_descriptor(camera, &desc);
+	if (res < 0)
+		return res;
+	// Verify that a serial number exists to query.  If not, don't touch the device.
+	if (desc.iSerialNumber == 0)
+		return -1;
+	if (!handle) {
+		res = libusb_open(camera, &handle);
+		if (res != 0)
+			return res;
+	}
+	res = libusb_get_string_descriptor_ascii(handle, desc.iSerialNumber, buf, sizeof(buf));
+	if (!cam_handle)
+		libusb_close(handle);
+	if (res < 0)
+		return res;
+
+	// K4W and 1473 don't provide a camera serial; use audio serial instead.
+	const char* const K4W_1473_SERIAL = "0000000000000000";
+	if (strncmp((const char*)buf, K4W_1473_SERIAL, 16) == 0)
+	{
+		libusb_device* audio_device = fnusb_find_sibling_device(ctx, camera, devs, (int)count, &fnusb_is_audio);
+		if (audio_device != NULL)
+		{
+			struct libusb_device_descriptor audio_desc;
+			res = libusb_get_device_descriptor(audio_device, &audio_desc);
+			if (res != 0)
+			{
+				FN_WARNING("Failed to get audio serial descriptors of K4W or 1473 device: %s\n", libusb_error_name(res));
+			}
+			else
+			{
+				libusb_device_handle * audio_handle = NULL;
+				res = libusb_open(audio_device, &audio_handle);
+				if (res != 0)
+				{
+					FN_WARNING("Failed to open audio device for serial of K4W or 1473 device: %s\n", libusb_error_name(res));
+				}
+				else
+				{
+					unsigned char audio_serial[256];
+					res = libusb_get_string_descriptor_ascii(audio_handle, audio_desc.iSerialNumber, audio_serial, sizeof(audio_serial));
+					libusb_close(audio_handle);
+					if (res <= 0)
+						FN_WARNING("Failed to get audio serial of K4W or 1473 device: %s\n", libusb_error_name(res));
+					else
+						memcpy(buf, audio_serial, sizeof(buf));
+				}
+			}
+		}
+	}
+
+	snprintf(serial, (size_t)size, "%s", (const char *)buf);
+	return 0;
+}
+
 FN_INTERNAL int fnusb_list_device_attributes(freenect_context *ctx, struct freenect_device_attributes** attribute_list)
 {
 	*attribute_list = NULL; // initialize some return value in case the user is careless.
@@ -221,6 +288,7 @@ FN_INTERNAL int fnusb_list_device_attributes(freenect_context *ctx, struct freen
 	for (i = 0; i < count; i++)
 	{
 		libusb_device* camera_device = devs[i];
+		char serial[256];
 
 		struct libusb_device_descriptor desc;
 		int res = libusb_get_device_descriptor (camera_device, &desc);
@@ -231,67 +299,14 @@ FN_INTERNAL int fnusb_list_device_attributes(freenect_context *ctx, struct freen
 
 		if (desc.idVendor == VID_MICROSOFT && (desc.idProduct == PID_NUI_CAMERA || desc.idProduct == PID_K4W_CAMERA))
 		{
-			// Verify that a serial number exists to query.  If not, don't touch the device.
-			if (desc.iSerialNumber == 0)
-			{
+			if (fnusb_read_kinect_serial(ctx, camera_device, NULL, devs, count, serial, sizeof(serial)) < 0)
 				continue;
-			}
-
-			libusb_device_handle *camera_handle;
-			res = libusb_open(camera_device, &camera_handle);
-			if (res != 0)
-			{
-				continue;
-			}
-
-			// Read string descriptor referring to serial number.
-			unsigned char serial[256]; // String descriptors are at most 256 bytes.
-			res = libusb_get_string_descriptor_ascii(camera_handle, desc.iSerialNumber, serial, 256);
-			libusb_close(camera_handle);
-			if (res < 0)
-			{
-				continue;
-			}
-
-			// K4W and 1473 don't provide a camera serial; use audio serial instead.
-			const char* const K4W_1473_SERIAL = "0000000000000000";
-			if (strncmp((const char*)serial, K4W_1473_SERIAL, 16) == 0)
-			{
-				libusb_device* audio_device = fnusb_find_sibling_device(ctx, camera_device, devs, count, &fnusb_is_audio);
-				if (audio_device != NULL)
-				{
-					struct libusb_device_descriptor audio_desc;
-					res = libusb_get_device_descriptor(audio_device, &audio_desc);
-					if (res != 0)
-					{
-						FN_WARNING("Failed to get audio serial descriptors of K4W or 1473 device: %s\n", libusb_error_name(res));
-					}
-					else
-					{
-						libusb_device_handle * audio_handle = NULL;
-						res = libusb_open(audio_device, &audio_handle);
-						if (res != 0)
-						{
-							FN_WARNING("Failed to open audio device for serial of K4W or 1473 device: %s\n", libusb_error_name(res));
-						}
-						else
-						{
-							res = libusb_get_string_descriptor_ascii(audio_handle, audio_desc.iSerialNumber, serial, 256);
-							libusb_close(audio_handle);
-							if (res <= 0)
-							{
-								FN_WARNING("Failed to get audio serial of K4W or 1473 device: %s\n", libusb_error_name(res));
-							}
-						}
-					}
-				}
-			}
 
 			// Add item to linked list.
 			struct freenect_device_attributes* current_attr = (struct freenect_device_attributes*)malloc(sizeof(struct freenect_device_attributes));
 			memset(current_attr, 0, sizeof(*current_attr));
 
-			current_attr->camera_serial = strdup((char*)serial);
+			current_attr->camera_serial = strdup(serial);
 			*next_attr = current_attr;
 			next_attr = &(current_attr->next);
 			num_cams++;
@@ -300,6 +315,89 @@ FN_INTERNAL int fnusb_list_device_attributes(freenect_context *ctx, struct freen
 
 	libusb_free_device_list(devs, 1);
 	return num_cams;
+}
+
+// Find the Kinect cameras now connected (at most max) for the hotplug scan.
+// Serials are read only for cameras the previous scan did not know; for a
+// camera this context has open, through its own handle (on Windows a second
+// open of a WinUSB device fails).
+FN_INTERNAL int fnusb_scan_cameras(freenect_context *ctx, fn_hotplug_entry *out, int max)
+{
+	libusb_device **devs;
+	ssize_t count = libusb_get_device_list(ctx->usb.ctx, &devs);
+	int i, n = 0;
+	if (count < 0)
+		return (count >= INT_MIN) ? (int)count : -1;
+	for (i = 0; i < count && n < max; i++) {
+		struct libusb_device_descriptor desc;
+		const fn_hotplug_entry *known;
+		fn_hotplug_entry *e = &out[n];
+		if (libusb_get_device_descriptor(devs[i], &desc) < 0 || !fnusb_is_camera(desc))
+			continue;
+		e->bus = libusb_get_bus_number(devs[i]);
+		e->addr = libusb_get_device_address(devs[i]);
+		e->serial[0] = '\0';
+		known = fn_hotplug_find(&ctx->hotplug, e->bus, e->addr);
+		if (known) {
+			memcpy(e->serial, known->serial, sizeof(e->serial));
+		} else {
+			libusb_device_handle *own = NULL;
+			freenect_device *dev;
+			for (dev = ctx->first; dev; dev = dev->next)
+				if (dev->usb_cam.dev && dev->cam_bus == e->bus && dev->cam_addr == e->addr)
+					own = dev->usb_cam.dev;
+			if (fnusb_read_kinect_serial(ctx, devs[i], own, devs, count, e->serial, sizeof(e->serial)) < 0)
+				e->serial[0] = '\0';
+		}
+		n++;
+	}
+	libusb_free_device_list(devs, 1);
+	return n;
+}
+
+static int LIBUSB_CALL fnusb_hotplug_event(libusb_context *usb_ctx, libusb_device *device, libusb_hotplug_event event, void *user)
+{
+	freenect_context *ctx = (freenect_context *)user;
+	struct libusb_device_descriptor desc;
+	(void)usb_ctx; (void)event;
+	// Only rescan for Kinect functions. Runs inside libusb's event handling,
+	// where no synchronous I/O is allowed, so the scan happens afterwards.
+	if (libusb_get_device_descriptor(device, &desc) == 0 && desc.idVendor == VID_MICROSOFT)
+		ctx->hotplug.dirty = 1;
+	return 0; // stay registered
+}
+
+// Use libusb's hotplug notifications if this platform has them; otherwise
+// freenect_process_events_timeout() polls.
+FN_INTERNAL void fnusb_hotplug_register(freenect_context *ctx)
+{
+	libusb_hotplug_callback_handle handle;
+	const char *poll = getenv("LIBFREENECT_HOTPLUG_POLL");
+	ctx->hotplug.native = 0;
+	if (poll && strcmp(poll, "1") == 0) {
+		FN_INFO("LIBFREENECT_HOTPLUG_POLL=1: scanning for Kinects once a second\n");
+		return;
+	}
+	if (!libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)) {
+		FN_INFO("libusb has no hotplug support here; scanning for Kinects once a second\n");
+		return;
+	}
+	if (libusb_hotplug_register_callback(ctx->usb.ctx,
+	        (libusb_hotplug_event)(LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED | LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT),
+	        (libusb_hotplug_flag)0, VID_MICROSOFT, LIBUSB_HOTPLUG_MATCH_ANY, LIBUSB_HOTPLUG_MATCH_ANY,
+	        fnusb_hotplug_event, ctx, &handle) == LIBUSB_SUCCESS) {
+		ctx->hotplug.native = 1;
+		ctx->hotplug.native_handle = (int)handle;
+	} else {
+		FN_WARNING("libusb hotplug registration failed; scanning for Kinects once a second\n");
+	}
+}
+
+FN_INTERNAL void fnusb_hotplug_deregister(freenect_context *ctx)
+{
+	if (ctx->hotplug.native)
+		libusb_hotplug_deregister_callback(ctx->usb.ctx, (libusb_hotplug_callback_handle)ctx->hotplug.native_handle);
+	ctx->hotplug.native = 0;
 }
 
 #ifdef _WIN32
@@ -471,6 +569,10 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 	dev->usb_motor.dev = NULL;
 	dev->usb_audio.parent = dev;
 	dev->usb_audio.dev = NULL;
+	dev->usb_cam.device_dead = 0;
+	dev->usb_motor.device_dead = 0;
+	dev->usb_audio.device_dead = 0;
+	dev->disconnect_handled = 0;
 
 	libusb_device **devs; // pointer to pointer of device, used to retrieve a list of devices
 	ssize_t count = libusb_get_device_list (dev->parent->usb.ctx, &devs); //get the list of devices
@@ -498,6 +600,8 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 		}
 
 		camera = devs[i]; // found the requested camera
+		dev->cam_bus = libusb_get_bus_number(camera);
+		dev->cam_addr = libusb_get_device_address(camera);
 		dev->device_type = fnusb_detect_kinect_type(ctx, camera, devs, (int)count, &desc);
 		if (ctx->enabled_subdevices & FREENECT_DEVICE_CAMERA)
 		{
@@ -742,6 +846,9 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 							// Save the device handle.
 							dev->usb_audio.dev = new_dev_handle;
 							dev->usb_audio.PID = new_dev_desc.idProduct;
+							// The old handle's last transfers may have failed with
+							// NO_DEVICE as the controller rebooted; the new one is fine.
+							dev->usb_audio.device_dead = 0;
 
 							// Verify that we've actually found a device running the right firmware.
 							num_interfaces = fnusb_num_interfaces(&dev->usb_audio);
@@ -1077,13 +1184,22 @@ FN_INTERNAL int fnusb_stop_iso(fnusb_dev *dev, fnusb_isoc_stream *strm)
 
 FN_INTERNAL int fnusb_control(fnusb_dev *dev, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint8_t *data, uint16_t wLength)
 {
-	return libusb_control_transfer(dev->dev, bmRequestType, bRequest, wValue, wIndex, data, wLength, 0);
+	// A finite timeout, as for bulk transfers: 0 would wait forever if the
+	// device stops answering.
+	int res = libusb_control_transfer(dev->dev, bmRequestType, bRequest, wValue, wIndex, data, wLength, 5000);
+	if (res == LIBUSB_ERROR_NO_DEVICE)
+		dev->device_dead = 1; // unplugged
+	return res;
 }
 
 FN_INTERNAL int fnusb_bulk(fnusb_dev *dev, uint8_t endpoint, uint8_t *data, int len, int *transferred) {
+	int res;
 	*transferred = 0;
 	// A finite timeout: 0 would wait forever if the audio controller stops answering.
-	return libusb_bulk_transfer(dev->dev, endpoint, data, len, transferred, 5000);
+	res = libusb_bulk_transfer(dev->dev, endpoint, data, len, transferred, 5000);
+	if (res == LIBUSB_ERROR_NO_DEVICE)
+		dev->device_dead = 1; // unplugged (or, during a firmware upload, rebooted)
+	return res;
 }
 
 FN_INTERNAL int fnusb_clear_halt(fnusb_dev *dev, uint8_t endpoint) {

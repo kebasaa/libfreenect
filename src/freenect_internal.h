@@ -45,6 +45,46 @@ typedef void (*fnusb_iso_cb)(freenect_device *dev, uint8_t *buf, int len);
 // needed to set the led state for non 1414 devices
 FN_INTERNAL int fnusb_set_led_alt(libusb_device_handle * dev, freenect_context * ctx, freenect_led_options state);
 
+// Hotplug (hotplug.c): the Kinect cameras seen by the last scan. A camera is
+// identified by its USB bus and address, which change whenever it
+// re-enumerates, so a Kinect that is unplugged and plugged in again is a new
+// arrival.
+#define FN_HOTPLUG_MAX 16
+#define FN_HOTPLUG_POLL_MS 1000
+typedef struct {
+	uint8_t bus;
+	uint8_t addr;
+	char serial[64];
+} fn_hotplug_entry;
+
+typedef struct {
+	freenect_hotplug_event event;
+	fn_hotplug_entry dev;
+} fn_hotplug_change;
+
+typedef struct {
+	freenect_hotplug_cb cb;
+	void *user;
+	fn_hotplug_entry known[FN_HOTPLUG_MAX];
+	int n_known;
+	int dirty;           // rescan at the next freenect_process_events*()
+	int native;          // libusb hotplug is registered (no polling needed)
+	int native_handle;   // libusb_hotplug_callback_handle
+	uint64_t last_scan_ms;
+} fn_hotplug_state;
+
+// The entry for bus/addr in the last scan, or NULL.
+const fn_hotplug_entry *fn_hotplug_find(const fn_hotplug_state *st, uint8_t bus, uint8_t addr);
+// Make `now` (n_now cameras) the known set. Writes the differences to
+// `changes` (departures first, then arrivals, at most max_changes) and
+// returns how many there are.
+int fn_hotplug_update(fn_hotplug_state *st, const fn_hotplug_entry *now, int n_now,
+                      fn_hotplug_change *changes, int max_changes);
+// USB side (usb_libusb10.c)
+int fnusb_scan_cameras(freenect_context *ctx, fn_hotplug_entry *out, int max);
+void fnusb_hotplug_register(freenect_context *ctx);
+void fnusb_hotplug_deregister(freenect_context *ctx);
+
 struct _freenect_context {
 	freenect_loglevel log_level;
 	freenect_log_cb log_cb;
@@ -59,6 +99,8 @@ struct _freenect_context {
 
     unsigned char *     fn_fw_k4w_ptr;
     unsigned int        fn_fw_k4w_size;
+
+	fn_hotplug_state hotplug;
 };
 
 #define LL_FATAL FREENECT_LOG_FATAL
@@ -293,6 +335,12 @@ struct _freenect_device {
 	uint64_t tilt_last_move_ms;
 	uint64_t tilt_window_start_ms;
 	int tilt_window_count;
+
+	// USB bus and address of this sensor's camera when it was opened (also when
+	// the camera subdevice itself is not open), to match hotplug departures.
+	uint8_t cam_bus;
+	uint8_t cam_addr;
+	int disconnect_handled; // streams already stopped after the device left
 };
 
 // LIBFREENECT_LED=off: the LED stays off (see freenect_set_led()).

@@ -55,6 +55,7 @@ set (PROJECT_APIVER
 
 OPTION(BUILD_REDIST_PACKAGE "Build libfreenect in a legally-redistributable manner (only affects audio)" ON)
 OPTION(BUILD_EXAMPLES "Build example programs" ON)
+OPTION(BUILD_TESTS "Build the unit tests (no Kinect needed; run with ctest)" ON)
 OPTION(BUILD_FAKENECT "Build fakenect mock library" ON)
 OPTION(BUILD_C_SYNC "Build c synchronous library" ON)
 OPTION(BUILD_CPP "Build C++ Library (currently header only)" ON)
@@ -151,6 +152,11 @@ ENDIF()
 
 IF(BUILD_FAKENECT)
   add_subdirectory (fakenect)
+ENDIF()
+
+IF(BUILD_TESTS)
+  enable_testing()
+  add_subdirectory (test)
 ENDIF()
 
 IF(BUILD_C_SYNC)
