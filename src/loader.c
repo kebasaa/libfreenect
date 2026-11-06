@@ -134,9 +134,10 @@ static void add_firmware_candidate(char candidates[][1024], int *count, int max,
 	(*count)++;
 }
 
-FN_INTERNAL int upload_firmware(fnusb_dev* dev, char * filename) {
-	freenect_context* ctx = dev->parent->parent;
-	/* Search for the firmware file (audios.bin) in, in order:
+// Open the firmware file `filename` from the first search location that has
+// it, or return NULL.
+static FILE *open_firmware_file(freenect_context *ctx, const char *filename) {
+	/* Search locations, in order:
 	 *   $LIBFREENECT_FIRMWARE_PATH
 	 *   .
 	 *   ${HOME}/.libfreenect
@@ -178,11 +179,15 @@ FN_INTERNAL int upload_firmware(fnusb_dev* dev, char * filename) {
 	for (i = 0; !fw && i < count; i++) {
 		FN_INFO("Trying to open %s as firmware...\n", candidates[i]);
 		fw = fopen(candidates[i], "rb");
+		if (fw)
+			FN_NOTICE("Using audio firmware %s\n", candidates[i]);
 	}
-	if (!fw) {
-		FN_ERROR("upload_firmware: failed to find firmware file %s. Run fwfetcher.py and put the file in one of the locations above, or set LIBFREENECT_FIRMWARE_PATH.\n", filename);
-		return -ENOENT;
-	}
+	return fw;
+}
+
+// Read the open firmware file, upload it, and close the file.
+static int upload_firmware_file(fnusb_dev *dev, FILE *fw) {
+	freenect_context* ctx = dev->parent->parent;
 
 	// get the number of bytes of the file
 	fseek(fw, 0, SEEK_END);
@@ -206,6 +211,60 @@ FN_INTERNAL int upload_firmware(fnusb_dev* dev, char * filename) {
 	int retVal = upload_firmware_from_memory(dev, fw_bytes, (unsigned int)num_read);
 	free(fw_bytes);
 	return retVal;
+}
+
+FN_INTERNAL int upload_firmware(fnusb_dev* dev, char * filename) {
+	freenect_context* ctx = dev->parent->parent;
+	FILE *fw = open_firmware_file(ctx, filename);
+	if (!fw) {
+		FN_ERROR("upload_firmware: failed to find firmware file %s. Run fwfetcher.py and put the file in one of the search locations, or set LIBFREENECT_FIRMWARE_PATH.\n", filename);
+		return -ENOENT;
+	}
+	return upload_firmware_file(dev, fw);
+}
+
+#define FW_UAC "UACFirmware.bin" // Microsoft's firmware (freenect-driver-install --fetch-firmware)
+#define FW_XBOX "audios.bin"     // Xbox 360 firmware (fwfetcher.py)
+
+/* Upload the audio controller firmware, choosing the image:
+ *   LIBFREENECT_AUDIO_FIRMWARE=uac   only UACFirmware.bin, Microsoft's firmware:
+ *                                    the microphones become a standard USB
+ *                                    Audio device for the operating system
+ *   LIBFREENECT_AUDIO_FIRMWARE=xbox  only audios.bin, for libfreenect's own
+ *                                    audio API (freenect_start_audio)
+ *   unset: Windows prefers UACFirmware.bin, because libfreenect's audio
+ *   streaming is disabled there; other platforms prefer audios.bin, so the
+ *   audio API keeps working. Either falls back to the other image.
+ */
+FN_INTERNAL int upload_default_firmware(fnusb_dev* dev) {
+	freenect_context* ctx = dev->parent->parent;
+	const char *names[2];
+	int n = 0, i;
+	const char *pref = getenv("LIBFREENECT_AUDIO_FIRMWARE");
+	if (pref && strcmp(pref, "uac") == 0) {
+		names[n++] = FW_UAC;
+	} else if (pref && strcmp(pref, "xbox") == 0) {
+		names[n++] = FW_XBOX;
+	} else {
+#ifdef _WIN32
+		names[n++] = FW_UAC;
+		names[n++] = FW_XBOX;
+#else
+		names[n++] = FW_XBOX;
+		names[n++] = FW_UAC;
+#endif
+	}
+	for (i = 0; i < n; i++) {
+		FILE *fw = open_firmware_file(ctx, names[i]);
+		if (fw)
+			return upload_firmware_file(dev, fw);
+	}
+#ifdef _WIN32
+	FN_ERROR("upload_firmware: no audio firmware found. Run freenect-driver-install --fetch-firmware, or set LIBFREENECT_FIRMWARE_PATH.\n");
+#else
+	FN_ERROR("upload_firmware: no audio firmware found (%s or %s). Run fwfetcher.py, or set LIBFREENECT_FIRMWARE_PATH.\n", FW_XBOX, FW_UAC);
+#endif
+	return -ENOENT;
 }
 
 FN_INTERNAL int upload_firmware_from_memory(fnusb_dev* dev, unsigned char * fw_from_mem, unsigned int fw_size_in_btyes) {

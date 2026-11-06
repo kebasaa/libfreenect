@@ -156,6 +156,16 @@ int freenect_start_audio(freenect_device* dev) {
 	if (dev->audio.running)
 		return -1;
 
+	// With Microsoft's UAC firmware the microphones are a standard USB Audio
+	// device, owned by the operating system's audio stack; libfreenect's audio
+	// protocol is only spoken by the Xbox audios.bin firmware.
+	if (fnusb_has_audio_class(&dev->usb_audio)) {
+		FN_ERROR("The audio controller runs Microsoft's UAC firmware: its microphones are a standard USB "
+		         "audio device. Record from them with the operating system's audio APIs, or load "
+		         "audios.bin (LIBFREENECT_AUDIO_FIRMWARE=xbox) to use freenect_start_audio().\n");
+		return -1;
+	}
+
 #ifdef _WIN32
 	// Safety guard. In a hardware test on Windows 11 (WinUSB, Xbox 1414 with
 	// audios.bin), the audio isochronous streams reported stalls, and the

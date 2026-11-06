@@ -36,8 +36,9 @@
  * starts.
  *
  * Usage: freenect-fwloader [--firmware FILE] [--verbose]
- *   Without --firmware, audios.bin is searched for in the usual places (see
- *   upload_firmware() in src/loader.c), or in $LIBFREENECT_FIRMWARE_PATH.
+ *   Without --firmware, the image is chosen as in upload_default_firmware()
+ *   (src/loader.c): UACFirmware.bin or audios.bin, from the usual places or
+ *   $LIBFREENECT_FIRMWARE_PATH; LIBFREENECT_AUDIO_FIRMWARE=uac|xbox forces one.
  */
 
 #include <stdio.h>

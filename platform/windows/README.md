@@ -74,14 +74,15 @@ libfreenect doesn't distribute Microsoft's firmware, and Microsoft's licence ter
 
 `--from` uses an installer you've already downloaded instead of downloading it again.
 
-**Xbox firmware (`audios.bin`).** `src/fwfetcher.py` fetches it from the Xbox 360 system update. It's the firmware libfreenect's own audio API uses.
-On Kinect for Windows and the Xbox model 1473 it also controls the motor and LED.
-libfreenect uploads the firmware when an application opens the audio device.
-To do it ahead of time, for example at login, run:
+**Xbox firmware (`audios.bin`).** `src/fwfetcher.py` fetches it from the Xbox 360 system update. It's the firmware libfreenect's own audio API (`freenect_start_audio`) speaks. That API is disabled on Windows.
 
-    freenect-fwloader [--firmware path\to\audios.bin]
+**Which image is loaded.** libfreenect uploads the firmware when an application opens the audio device. On Kinect for Windows and the Xbox model 1473, the audio controller also drives the motor and LED. On Windows libfreenect prefers `UACFirmware.bin` and falls back to `audios.bin`; on other platforms it's the other way round. Set `LIBFREENECT_AUDIO_FIRMWARE=uac` or `=xbox` to allow only one of them.
 
-Without `--firmware`, `audios.bin` is looked for in `%LIBFREENECT_FIRMWARE_PATH%`, the current directory, `%LOCALAPPDATA%\libfreenect`, the directory of the program, and `%ProgramData%\libfreenect`.
+The files are looked for in `%LIBFREENECT_FIRMWARE_PATH%`, the current directory, `%LOCALAPPDATA%\libfreenect`, the directory of the program, and `%ProgramData%\libfreenect`. To upload ahead of time, for example at login, run:
+
+    freenect-fwloader [--firmware path\to\image]
+
+With `UACFirmware.bin`, the audio controller comes back as 045E:02BB (Kinect for Windows: 02C3). Its microphones are then a standard USB Audio device, a *Kinect USB Audio* recording device in Windows.
 
 ## Building
 

@@ -614,7 +614,7 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 			}
 			else
 			{
-				res = upload_firmware(&dev->usb_audio, "audios.bin");
+				res = upload_default_firmware(&dev->usb_audio);
 			}
 
 			if (res < 0) {
@@ -622,6 +622,13 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 				free(audio_serial);
 				goto failure;
 			}
+
+			// Remember the physical port: the controller re-enumerates on the same
+			// port, possibly with another PID (02BB/02C3 with Microsoft's firmware).
+			libusb_device *old_audio = libusb_get_device(dev->usb_audio.dev);
+			uint8_t old_bus = libusb_get_bus_number(old_audio);
+			uint8_t old_ports[8];
+			int old_nports = libusb_get_port_numbers(old_audio, old_ports, sizeof(old_ports));
 
 			libusb_close(dev->usb_audio.dev);
 			dev->usb_audio.dev = NULL;
@@ -659,8 +666,17 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 							libusb_close(new_dev_handle);
 							continue;
 						}
-						// Compare to expected serial
-						if (r == strlen(audio_serial) && strcmp((char*)string_desc, audio_serial) == 0)
+						// Same device: same serial, or (if the firmware reports another
+						// serial) the same bus and port path.
+						int same_serial = (r == (int)strlen(audio_serial) && strcmp((char*)string_desc, audio_serial) == 0);
+						uint8_t new_ports[8];
+						int new_nports = libusb_get_port_numbers(new_dev_list[dev_index], new_ports, sizeof(new_ports));
+						int same_port = old_nports > 0 && new_nports == old_nports &&
+						                libusb_get_bus_number(new_dev_list[dev_index]) == old_bus &&
+						                memcmp(new_ports, old_ports, (size_t)old_nports) == 0;
+						if (!same_serial && same_port)
+							FN_NOTICE("Audio controller came back on the same port with serial %s (was %s)\n", (char*)string_desc, audio_serial);
+						if (same_serial || same_port)
 						{
 							// We found it!
 							r = libusb_claim_interface(new_dev_handle, 0);
@@ -673,9 +689,13 @@ FN_INTERNAL int fnusb_open_subdevices(freenect_device *dev, int index)
 							}
 							// Save the device handle.
 							dev->usb_audio.dev = new_dev_handle;
+							dev->usb_audio.PID = new_dev_desc.idProduct;
 
 							// Verify that we've actually found a device running the right firmware.
 							num_interfaces = fnusb_num_interfaces(&dev->usb_audio);
+							FN_NOTICE("Audio controller re-enumerated as %04x:%04x with %d interfaces%s\n",
+							          new_dev_desc.idVendor, new_dev_desc.idProduct, num_interfaces,
+							          fnusb_has_audio_class(&dev->usb_audio) ? " (standard USB Audio: Microsoft's UAC firmware)" : "");
 
 							if (num_interfaces >= 2)
 							{
@@ -1027,4 +1047,21 @@ FN_INTERNAL int fnusb_num_interfaces(fnusb_dev *dev) {
 	retval = config->bNumInterfaces;
 	libusb_free_config_descriptor(config);
 	return retval;
+}
+
+// 1 if the device has a standard USB Audio Class interface. That is the case
+// when the audio controller runs Microsoft's UAC firmware: its microphones are
+// then an ordinary USB audio device owned by the operating system's audio
+// stack, and libfreenect's own audio protocol does not apply.
+FN_INTERNAL int fnusb_has_audio_class(fnusb_dev *dev) {
+	struct libusb_config_descriptor* config;
+	int i, j, found = 0;
+	if (!dev->dev || libusb_get_active_config_descriptor(libusb_get_device(dev->dev), &config) < 0)
+		return 0;
+	for (i = 0; i < config->bNumInterfaces && !found; i++)
+		for (j = 0; j < config->interface[i].num_altsetting && !found; j++)
+			if (config->interface[i].altsetting[j].bInterfaceClass == LIBUSB_CLASS_AUDIO)
+				found = 1;
+	libusb_free_config_descriptor(config);
+	return found;
 }
