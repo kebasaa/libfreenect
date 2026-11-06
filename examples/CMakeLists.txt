@@ -16,6 +16,19 @@ target_link_libraries(freenect-hotplug freenect)
 install(TARGETS freenect-camtest freenect-wavrecord freenect-fwloader freenect-hotplug
         DESTINATION bin)
 
+# freenect-v4l2 (Linux): depth and colour as V4L2 cameras through v4l2loopback
+if (PROJECT_OS_LINUX AND BUILD_V4L2_BRIDGE)
+  include(CheckIncludeFile)
+  check_include_file(linux/videodev2.h HAVE_LINUX_VIDEODEV2_H)
+  if (HAVE_LINUX_VIDEODEV2_H)
+    add_executable(freenect-v4l2 v4l2bridge.c)
+    target_link_libraries(freenect-v4l2 freenect)
+    install(TARGETS freenect-v4l2 DESTINATION bin)
+  else ()
+    message(STATUS "freenect-v4l2 not built: linux/videodev2.h not found (linux-libc-dev)")
+  endif ()
+endif ()
+
 # The OpenGL viewers need pthreads, OpenGL, and GLFW or GLUT
 # (FREENECT_GL_VIEWERS, cmake_modules/FreenectGLViewers.cmake).
 set(THREADS_USE_PTHREADS_WIN32 true)

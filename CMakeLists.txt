@@ -73,6 +73,7 @@ IF(PROJECT_OS_LINUX)
 	OPTION(BUILD_CPACK_RPM "Build an RPM using CPack" OFF)
 	OPTION(BUILD_CPACK_TGZ "Build an TGZ using CPack" OFF)
 	OPTION(INSTALL_LINUX_INTEGRATION "Install the udev rules and the firmware-at-plug-in systemd unit" ON)
+	OPTION(BUILD_V4L2_BRIDGE "Build freenect-v4l2 (Kinect depth and colour as V4L2 cameras through v4l2loopback)" ON)
 ENDIF(PROJECT_OS_LINUX)
 
 ######################################################################################

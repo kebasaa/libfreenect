@@ -13,6 +13,11 @@ add_test(NAME hotplug COMMAND test_hotplug)
 add_executable(test_core_hotplug test_core_hotplug.c ${CMAKE_SOURCE_DIR}/src/core.c ${CMAKE_SOURCE_DIR}/src/hotplug.c)
 add_test(NAME core_hotplug COMMAND test_core_hotplug)
 
+# freenect-v4l2's pixel conversions (examples/v4l2_convert.h)
+add_executable(test_v4l2_convert test_v4l2_convert.c)
+target_include_directories(test_v4l2_convert PRIVATE ${CMAKE_SOURCE_DIR}/examples)
+add_test(NAME v4l2_convert COMMAND test_v4l2_convert)
+
 # Isochronous stream health check and VM detection (src/iso_diag.c)
 add_executable(test_iso_diag test_iso_diag.c ${CMAKE_SOURCE_DIR}/src/iso_diag.c)
 add_test(NAME iso_diag COMMAND test_iso_diag)

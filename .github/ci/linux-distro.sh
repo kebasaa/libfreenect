@@ -44,7 +44,7 @@ set +e
 set -e
 test "$code" -eq 2 || { echo "freenect-fwloader should report no Kinect (exit 2), got $code"; exit 1; }
 LIBFREENECT_HOTPLUG_POLL=1 "$BUILD/bin/freenect-hotplug" 2 --no-stream
-for v in glview regview hiview chunkview micview glpclview cppview cpp_pcview; do
+for v in glview regview hiview chunkview micview glpclview cppview cpp_pcview v4l2; do
 	test -x "$BUILD/bin/freenect-$v" || { echo "freenect-$v was not built"; exit 1; }
 done
 

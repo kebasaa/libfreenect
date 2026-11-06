@@ -72,6 +72,41 @@ V4L2 device, `modprobe.d/kinect.conf` (installed to
 `snd-usb-audio` keeps the microphone array (interfaces 2 and 3 of the audio
 controller); libfreenect never claims those.
 
+## The Kinect as a camera for other programs (V4L2)
+
+`freenect-v4l2` serves the Kinect's depth and colour streams as ordinary V4L2
+cameras through [v4l2loopback](https://github.com/v4l2loopback/v4l2loopback),
+so that OpenCV, GStreamer, ffmpeg, OBS, browsers and video-call programs can
+use them. Unlike `gspca_kinect`, it gets everything libfreenect does: depth in
+millimetres, hotplug, the model-specific fixes.
+
+    sudo apt install v4l2loopback-dkms      # or linux-modules-extra-$(uname -r)
+    sudo modprobe v4l2loopback devices=2 video_nr=10,11 \
+         card_label="Kinect depth,Kinect video" exclusive_caps=1
+    freenect-v4l2 --depth /dev/video10 --video /dev/video11
+
+`exclusive_caps=1` makes each device look like a plain camera to its readers,
+which browsers need. Then, for example:
+
+    ffplay -f v4l2 /dev/video11                          # colour
+    ffplay -f v4l2 /dev/video10                          # depth (16-bit)
+
+| Option | Effect |
+|---|---|
+| `--depth DEV`, `--video DEV` | Where to write depth and colour (either or both) |
+| `--depth-format y16` | Default. 16-bit grey whose value is the distance in millimetres (0 = no data), for programs that measure |
+| `--depth-format yuyv` | A grey image (near = bright, 0.4–4.5 m), for programs that only show video |
+| `--video-format yuyv` / `rgb24` | Colour as YUYV (default, accepted almost everywhere) or RGB24 |
+| `--serial SERIAL` | Use this Kinect (default: the first one that arrives) |
+| `--test-pattern` | Write moving test images without a Kinect, to check the loopback setup |
+
+Both streams are 640×480 at 30 fps. It writes only to V4L2 *output* devices
+(v4l2loopback) and refuses real cameras. When the Kinect is unplugged it waits
+for it to come back; Ctrl+C stops it. To load v4l2loopback at boot, put
+`v4l2loopback` in `/etc/modules-load.d/v4l2loopback.conf` and the options line
+in `/etc/modprobe.d/v4l2loopback.conf`
+(`options v4l2loopback devices=2 video_nr=10,11 card_label="Kinect depth,Kinect video" exclusive_caps=1`).
+
 ## Install locations
 
 | Install prefix | udev rules | systemd unit |

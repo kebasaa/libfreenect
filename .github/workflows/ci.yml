@@ -153,6 +153,38 @@ jobs:
             { test "$code" -eq 0 && test "$took" -le 5; } || { echo "freenect-hotplug ($mode): exit $code after ${took}s"; exit 1; }
           done
 
+      - name: freenect-v4l2 through v4l2loopback (test pattern)
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          set -e
+          sudo apt-get install -y --no-install-recommends v4l-utils ffmpeg
+          loaded=0
+          for try in "linux-modules-extra-$(uname -r)" "v4l2loopback-dkms linux-headers-$(uname -r)"; do
+            if sudo apt-get install -y --no-install-recommends $try >/dev/null 2>&1 &&
+               sudo modprobe v4l2loopback devices=2 video_nr=10,11 card_label="Kinect depth,Kinect video" exclusive_caps=1 2>/dev/null; then
+              loaded=1; break
+            fi
+          done
+          if [ "$loaded" != 1 ]; then
+            echo "::notice::v4l2loopback can't be loaded on this runner; the freenect-v4l2 end-to-end test was skipped"
+            exit 0
+          fi
+          sudo chmod 666 /dev/video10 /dev/video11
+          ./build/bin/freenect-v4l2 --test-pattern --frames 300 --depth /dev/video10 --video /dev/video11 &
+          writer=$!
+          sleep 2
+          v4l2-ctl -d /dev/video10 --get-fmt-video | tee "$RUNNER_TEMP/depth-fmt.txt"
+          v4l2-ctl -d /dev/video11 --get-fmt-video | tee "$RUNNER_TEMP/video-fmt.txt"
+          grep -q "640/480" "$RUNNER_TEMP/depth-fmt.txt" && grep -q "Y16" "$RUNNER_TEMP/depth-fmt.txt"
+          grep -q "640/480" "$RUNNER_TEMP/video-fmt.txt" && grep -q "YUYV" "$RUNNER_TEMP/video-fmt.txt"
+          timeout 20 ffmpeg -nostdin -loglevel error -f v4l2 -i /dev/video11 -frames:v 3 -f rawvideo -y "$RUNNER_TEMP/video.raw"
+          timeout 20 ffmpeg -nostdin -loglevel error -f v4l2 -i /dev/video10 -frames:v 3 -f rawvideo -y "$RUNNER_TEMP/depth.raw"
+          ls -l "$RUNNER_TEMP/video.raw" "$RUNNER_TEMP/depth.raw"
+          test "$(stat -c %s "$RUNNER_TEMP/video.raw")" -eq $((3 * 640 * 480 * 2))
+          test "$(stat -c %s "$RUNNER_TEMP/depth.raw")" -eq $((3 * 640 * 480 * 2))
+          kill -INT "$writer" 2>/dev/null || true  # it may have finished its frames already
+          wait "$writer"
+
       - name: Check the udev rules and the systemd unit
         run: |
           set -e
