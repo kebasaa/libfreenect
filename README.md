@@ -72,6 +72,12 @@ Alternately, firmware for Kinect model 1414 can be downloaded automatically by s
 
 Note that firmware may not be legal to redistribute in your jurisdiction!
 
+Microsoft's own audio firmware (`UAC.BIN`) can also be used. With it, the microphones become a standard USB Audio device for the operating system (ALSA/PipeWire, Core Audio, Windows), instead of being read through libfreenect's audio API. To fetch it from Microsoft's Kinect for Windows Runtime installer:
+
+    python3 src/fwfetcher.py --uac [--from KinectRuntime-v1.8-Setup.exe] [OUTPUT]
+
+This downloads the installer from download.microsoft.com, extracts only the firmware, verifies its SHA-256, and writes `UACFirmware.bin`, without running the installer. Put the file where libfreenect looks for firmware, for example `~/.libfreenect/` or `/usr/share/libfreenect/`. On Linux and macOS libfreenect prefers `audios.bin`; set `LIBFREENECT_AUDIO_FIRMWARE=uac` to use `UACFirmware.bin`. On Windows, `freenect-driver-install` fetches it for you. Microsoft's licence terms for the Kinect for Windows Runtime apply to this firmware.
+
 ## OSX
 
 If you don't have a package manager, install [Homebrew](http://brew.sh/).

@@ -571,6 +571,181 @@ def extractPirsFromZip(systemupdate):
     print("done.")
     return pirs
 
+###############################################################################
+# --uac: Microsoft's audio firmware (UAC.BIN, installed as UACFirmware.bin)
+#
+# It is fetched from Microsoft's own Kinect for Windows Runtime v1.8 installer
+# on the user's machine; libfreenect does not redistribute it. The installer
+# is a WiX Burn bundle: its payload is the second cabinet in the file, which
+# holds the MSI packages; the x64 drivers MSI ("a0") holds a cabinet with the
+# file "UACFirmware". All cabinets use MSZIP (deflate), so only the standard
+# library is needed. The installer is never run.
+
+UAC_RUNTIME_URL = ("https://download.microsoft.com/download/e/c/5/"
+                   "ec50686b-82f4-4dbf-a922-980183b214e6/KinectRuntime-v1.8-Setup.exe")
+UAC_RUNTIME_SHA256 = "f4d4143fb0f0a8d276889c077bfc8af42bfe99c128cadab5e316bf015a9858e9"
+UAC_FIRMWARE_SIZE = 145920
+UAC_FIRMWARE_SHA256 = "4467ae36ad378c58477432729d74eed0f9d45d35213f4430a781d90f64cea3f9"
+
+
+def cab_extract(cab, wanted):
+    """Return the contents of file `wanted` from cabinet bytes `cab` (MSZIP or stored)."""
+    import zlib
+    if cab[:4] != b"MSCF":
+        raise ValueError("not a cabinet")
+    coff_files, = struct.unpack_from("<I", cab, 16)
+    n_folders, n_files, flags = struct.unpack_from("<HHH", cab, 26)
+    pos = 36
+    cb_folder_res = cb_data_res = 0
+    if flags & 4:  # reserve fields present
+        cb_header_res, cb_folder_res, cb_data_res = struct.unpack_from("<HBB", cab, pos)
+        pos += 4 + cb_header_res
+    for flag in (1, 2):  # previous / next cabinet names: two strings each
+        if flags & flag:
+            for _ in range(2):
+                pos = cab.index(b"\0", pos) + 1
+    folders = []
+    for _ in range(n_folders):
+        start, n_data, comp = struct.unpack_from("<IHH", cab, pos)
+        folders.append((start, n_data, comp & 0x0F))
+        pos += 8 + cb_folder_res
+    entry = None
+    pos = coff_files
+    for _ in range(n_files):
+        size, offset, ifolder = struct.unpack_from("<IIH", cab, pos)
+        end = cab.index(b"\0", pos + 16)
+        name = cab[pos + 16:end].decode("latin-1")
+        if name.lower() == wanted.lower():
+            entry = (size, offset, ifolder)
+        pos = end + 1
+    if entry is None:
+        raise KeyError(wanted)
+    size, offset, ifolder = entry
+    start, n_data, comp = folders[ifolder]
+    if comp not in (0, 1):
+        raise ValueError("unsupported cabinet compression %d" % comp)
+    out = bytearray()
+    pos = start
+    for _ in range(n_data):
+        cb_data, cb_uncomp = struct.unpack_from("<HH", cab, pos + 4)
+        block = cab[pos + 8 + cb_data_res:pos + 8 + cb_data_res + cb_data]
+        pos += 8 + cb_data_res + cb_data
+        if comp == 0:
+            out += block
+        else:
+            # MSZIP: "CK" + a raw deflate block whose window is the folder's previous output
+            if block[:2] != b"CK":
+                raise ValueError("bad MSZIP block")
+            d = zlib.decompressobj(-15, zdict=bytes(out[-32768:]))
+            out += d.decompress(block[2:]) + d.flush()
+        if len(out) >= offset + size:
+            break
+    return bytes(out[offset:offset + size])
+
+
+def cfb_cabinet_streams(data):
+    """Yield the streams of an OLE compound file (an MSI) that are cabinets."""
+    if data[:8] != b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        raise ValueError("not an MSI")
+    ssz = 1 << struct.unpack_from("<H", data, 30)[0]
+    n_fat, dir_start = struct.unpack_from("<II", data, 44)
+    cutoff, = struct.unpack_from("<I", data, 56)
+    difat_start, n_difat = struct.unpack_from("<II", data, 68)
+
+    def sector(s):
+        return data[(s + 1) * ssz:(s + 2) * ssz]
+
+    difat = list(struct.unpack_from("<109I", data, 76))
+    s = difat_start
+    for _ in range(n_difat):
+        words = struct.unpack("<%dI" % (ssz // 4), sector(s))
+        difat += words[:-1]
+        s = words[-1]
+    fat = []
+    for s in difat[:n_fat]:
+        fat += struct.unpack("<%dI" % (ssz // 4), sector(s))
+
+    def chain(s, size=None):
+        out = bytearray()
+        for _ in range(len(fat)):
+            if s >= 0xFFFFFFFA:
+                break
+            out += sector(s)
+            s = fat[s]
+        return bytes(out if size is None else out[:size])
+
+    directory = chain(dir_start)
+    for i in range(0, len(directory), 128):
+        e = directory[i:i + 128]
+        if e[66:67] == b"\x02":  # stream
+            start, size = struct.unpack_from("<IQ", e, 116)
+            if size >= cutoff:
+                stream = chain(start, size)
+                if stream[:4] == b"MSCF":
+                    yield stream
+
+
+def find_bundle_cabinet(installer):
+    """The Burn bundle's payload: the second cabinet in the file."""
+    offsets = []
+    i = installer.find(b"MSCF\0\0\0\0")
+    while i >= 0 and len(offsets) < 2:
+        offsets.append(i)
+        i = installer.find(b"MSCF\0\0\0\0", i + 1)
+    if len(offsets) < 2:
+        raise ValueError("the installer has no payload cabinet")
+    start = offsets[1]
+    size, = struct.unpack_from("<I", installer, start + 8)
+    return installer[start:start + size]
+
+
+def fetch_uac_firmware(target, installer_path=None):
+    if sys.version_info < (3, 3):
+        sys.exit("--uac needs Python 3.3 or newer")
+    if installer_path:
+        print("Reading", installer_path)
+        with open(installer_path, "rb") as f:
+            installer = f.read()
+    else:
+        print("Microsoft's licence terms for the Kinect for Windows Runtime apply to this firmware.")
+        print("Downloading Microsoft's Kinect for Windows Runtime v1.8 (111 MB) from download.microsoft.com")
+        response = urlopen_timeout_retry(Request(UAC_RUNTIME_URL, headers={"User-Agent": "libfreenect-fwfetcher"}))
+        installer = response.read()
+    if hashlib.sha256(installer).hexdigest() != UAC_RUNTIME_SHA256:
+        print("Note: the installer differs from the known one (Microsoft re-signs its downloads);"
+              " the extracted firmware is checked instead.")
+    import zlib
+    firmware = None
+    try:
+        msi = cab_extract(find_bundle_cabinet(installer), "a0")
+        for cab in cfb_cabinet_streams(msi):
+            try:
+                firmware = cab_extract(cab, "UACFirmware")
+                break
+            except KeyError:
+                pass
+    except (ValueError, KeyError, IndexError, struct.error, zlib.error) as e:
+        sys.exit("error: the installer could not be unpacked (%s: %s); not installing anything"
+                 % (type(e).__name__, e))
+    if firmware is None:
+        sys.exit("error: the installer does not contain UACFirmware")
+    if len(firmware) != UAC_FIRMWARE_SIZE or hashlib.sha256(firmware).hexdigest() != UAC_FIRMWARE_SHA256:
+        sys.exit("error: the extracted firmware does not match the known UAC.BIN; not installing it")
+    with open(target, "wb") as f:
+        f.write(firmware)
+    print("Wrote", target, "(%d bytes, SHA-256 verified)" % len(firmware))
+
+
+if __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "--uac":
+    # fwfetcher.py --uac [--from INSTALLER] [OUTPUT]   (default output: UACFirmware.bin)
+    args = sys.argv[2:]
+    installer_path = None
+    if len(args) >= 2 and args[0] == "--from":
+        installer_path = args[1]
+        args = args[2:]
+    fetch_uac_firmware(args[0] if args else "UACFirmware.bin", installer_path)
+    sys.exit(0)
+
 if __name__ == "__main__":
     target = "audios.bin"
     if len(sys.argv) == 2:
