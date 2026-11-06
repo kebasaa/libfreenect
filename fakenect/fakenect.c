@@ -209,9 +209,11 @@ static void convert_rgb_to_uyvy(uint8_t *rgb_buffer, uint8_t *yuv_buffer,
 	}
 }
 
+static void fakenect_hotplug(freenect_context *ctx);
+
 int freenect_process_events(freenect_context *ctx)
 {
-	(void)ctx;
+	fakenect_hotplug(ctx);
 	/* This is where the magic happens. We read 1 update from the index
 	   per call, so this needs to be called in a loop like usual.  If the
 	   index line is a Depth/RGB image the provided callback is called.  If
@@ -576,6 +578,47 @@ int freenect_init(freenect_context **ctx, freenect_usb_context *usb_ctx)
 	default_video_back = malloc(640*480*3);
 	default_depth_back = malloc(640*480*2);
 
+	return 0;
+}
+
+// Hotplug: the recording is one Kinect, which "arrives" at the first
+// freenect_process_events() after the callback is set.
+static freenect_hotplug_cb hotplug_cb = NULL;
+static void *hotplug_user = NULL;
+static int hotplug_pending = 0;
+
+int freenect_set_hotplug_callback(freenect_context *ctx, freenect_hotplug_cb cb, void *user)
+{
+	(void)ctx;
+	hotplug_cb = cb;
+	hotplug_user = user;
+	hotplug_pending = cb != NULL;
+	return 0;
+}
+
+static void fakenect_hotplug(freenect_context *ctx)
+{
+	if (hotplug_pending && hotplug_cb) {
+		hotplug_pending = 0;
+		hotplug_cb(ctx, FREENECT_HOTPLUG_ARRIVED, "fakenect", hotplug_user);
+	}
+}
+
+int freenect_device_connected(freenect_device *dev)
+{
+	(void)dev;
+	return 1;
+}
+
+const char *freenect_get_device_serial(freenect_device *dev)
+{
+	(void)dev;
+	return "fakenect";
+}
+
+int freenect_set_ir_emitter(freenect_device *dev, int on)
+{
+	(void)dev; (void)on;
 	return 0;
 }
 

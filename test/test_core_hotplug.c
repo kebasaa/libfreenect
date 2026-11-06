@@ -93,9 +93,18 @@ int fnusb_open_subdevices(freenect_device *dev, int index)
 	dev->cam_bus = bus_now[index].bus;
 	dev->cam_addr = bus_now[index].addr;
 	dev->usb_cam.dev = (libusb_device_handle *)(void *)&bus_now[index]; /* any non-NULL */
+	snprintf(dev->serial, sizeof(dev->serial), "%s", bus_now[index].serial);
 	return 0;
 }
 int fnusb_close_subdevices(freenect_device *dev) { dev->usb_cam.dev = NULL; return 0; }
+static int recover_calls = 0, recover_result = 0;
+int fnusb_recover_audio(freenect_device *dev)
+{
+	recover_calls++;
+	if (recover_result == 0)
+		dev->usb_audio.device_dead = 0; /* reopened */
+	return recover_result;
+}
 int freenect_camera_init(freenect_device *dev) { (void)dev; return 0; }
 int freenect_camera_teardown(freenect_device *dev) { (void)dev; return 0; }
 int freenect_stop_depth(freenect_device *dev) { (void)dev; stops_depth++; return 0; }
@@ -198,7 +207,27 @@ int main(void)
 	plug(1, 10, "SERIAL-A"); clock_ms += 1000; pump(ctx, 0);
 	CHECK(app_dev && freenect_device_connected(app_dev), "reopened after it came back");
 
-	printf("6. without a hotplug callback a lost device is an error, as before\n");
+	printf("6. the audio controller reboots while the camera stays\n");
+	CHECK(strcmp(freenect_get_device_serial(app_dev), "SERIAL-A") == 0, "freenect_get_device_serial() of the open device");
+	app_dev->usb_audio.dev = (libusb_device_handle *)(void *)&recover_calls; /* any non-NULL */
+	stops_depth = stops_video = 0;
+	app_dev->usb_audio.device_dead = 1; /* what a failed transfer does */
+	recover_result = 0; recover_calls = 0;
+	r = pump(ctx, 0);
+	CHECK(recover_calls == 1 && freenect_device_connected(app_dev), "reopened: still connected");
+	CHECK(stops_depth == 0 && stops_video == 0 && r == 0, "camera streams not touched");
+	recover_result = -1;
+	for (r = 0; r < 5; r++) {
+		app_dev->usb_audio.device_dead = 1;
+		pump(ctx, 0);
+	}
+	CHECK(recover_calls == FN_AUDIO_RECOVER_MAX, "gives up after FN_AUDIO_RECOVER_MAX attempts");
+	CHECK(!freenect_device_connected(app_dev) && stops_depth == 1, "then the device counts as disconnected");
+	app_dev->usb_audio.dev = NULL;
+	app_dev->usb_audio.device_dead = 0;
+	app_dev->disconnect_handled = 0;
+
+	printf("7. without a hotplug callback a lost device is an error, as before\n");
 	freenect_set_hotplug_callback(ctx, NULL, NULL);
 	app_dev->usb_cam.device_dead = 1; /* what a failed transfer does */
 	r = pump(ctx, 0);

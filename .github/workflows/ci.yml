@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch cancels the run it supersedes (macOS runners
+# in particular can queue for a long time).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     name: Windows ${{ matrix.arch }} (MSVC)

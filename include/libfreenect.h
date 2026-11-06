@@ -351,6 +351,19 @@ FREENECTAPI int freenect_set_hotplug_callback(freenect_context *ctx, freenect_ho
 FREENECTAPI int freenect_device_connected(freenect_device *dev);
 
 /**
+ * Serial number that identifies an open device: the camera's, or, on the
+ * model 1473 and the Kinect for Windows (whose cameras all report
+ * 0000000000000000), the audio controller's. It is the serial that
+ * freenect_open_device_by_camera_serial() and the hotplug callback use.
+ *
+ * @param dev Open device
+ *
+ * @return The serial (valid until the device is closed), or NULL if it could
+ *         not be read
+ */
+FREENECTAPI const char *freenect_get_device_serial(freenect_device *dev);
+
+/**
  * Answer which subdevices this library supports.  This is most useful for
  * wrappers trying to determine whether the underlying library was built with
  * audio support or not, so the wrapper can avoid calling functions that do not

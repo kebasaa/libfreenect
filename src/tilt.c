@@ -101,6 +101,44 @@ static int get_reply(libusb_device_handle* dev, freenect_context *ctx){
 	return res;
 }
 
+// Build number of the running UAC firmware: cmd 0x09 returns a 0x200-byte
+// block with the build at +0x44 (709 for v1.8, 390 for SDK beta 2), then the
+// usual status. Returns the build, or < 0 if the firmware doesn't answer it.
+FN_INTERNAL int fnusb_audio_fw_build(libusb_device_handle *audio, freenect_context *ctx)
+{
+	fn_alt_motor_command cmd;
+	unsigned char buffer[512];
+	int transferred = 0, res;
+	uint32_t build;
+
+	cmd.magic = fn_le32(0x06022009);
+	cmd.tag = fn_le32(tag_seq++);
+	cmd.arg1 = fn_le32(0x200); // expected reply length
+	cmd.cmd = fn_le32(0x09);
+	cmd.arg2 = 0;
+	memset(buffer, 0, sizeof(buffer));
+	memcpy(buffer, &cmd, 16);
+	res = libusb_bulk_transfer(audio, 0x01, buffer, 16, &transferred, 250);
+	if (res != 0) {
+		alt_clear_halts(audio);
+		return res;
+	}
+	res = libusb_bulk_transfer(audio, 0x81, buffer, sizeof(buffer), &transferred, 250);
+	if (res != 0) {
+		alt_clear_halts(audio);
+		return res;
+	}
+	if (transferred < 0x48) {
+		FN_INFO("fnusb_audio_fw_build(): %d bytes of build info, expected 512\n", transferred);
+		get_reply(audio, ctx);
+		return -1;
+	}
+	memcpy(&build, buffer + 0x44, 4);
+	if (get_reply(audio, ctx) < 0)
+		return -1;
+	return (int)fn_le32(build);
+}
+
 freenect_raw_tilt_state* freenect_get_tilt_state(freenect_device *dev)
 {
 	return &dev->raw_state;
@@ -406,6 +444,15 @@ int freenect_set_led_alt(freenect_device *dev, freenect_led_options state)
 	if (dev->usb_audio.dev == NULL)
 	{
 		FN_WARNING("Motor control failed: audio device missing\n");
+		return -1;
+	}
+	if (dev->audio_fw_build > 0 && dev->audio_fw_build < FN_UAC_LED_MIN_BUILD) {
+		// The command would be rejected and stall the pipes.
+		if (!dev->led_unsupported_noted) {
+			dev->led_unsupported_noted = 1;
+			FN_NOTICE("The audio firmware (build %d) has no LED command; load Microsoft's UAC.BIN v1.8 "
+			          "(build %d) to control the LED\n", dev->audio_fw_build, FN_UAC_LED_MIN_BUILD);
+		}
 		return -1;
 	}
 

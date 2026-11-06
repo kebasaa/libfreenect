@@ -348,7 +348,27 @@ struct _freenect_device {
 	uint8_t cam_bus;
 	uint8_t cam_addr;
 	int disconnect_handled; // streams already stopped after the device left
+
+	// Serial that identifies this Kinect (see freenect_get_device_serial()).
+	char serial[64];
+
+	// Build of the UAC firmware running on the audio controller (cmd 0x09),
+	// 0 if unknown; and whether the missing LED command was reported.
+	int audio_fw_build;
+	int led_unsupported_noted;
+	// Times the audio controller was reopened after it rebooted.
+	int audio_recover_attempts;
 };
+
+// The first UAC firmware build with the LED command 0x10 (v1.8 = 709; the
+// SDK v1.0 beta 2 image, build 390, lacks it).
+#define FN_UAC_LED_MIN_BUILD 709
+#define FN_AUDIO_RECOVER_MAX 3
+
+// Build number of the running UAC audio firmware (cmd 0x09), or < 0.
+int fnusb_audio_fw_build(libusb_device_handle *audio, freenect_context *ctx);
+// Reopen the audio controller after it rebooted, uploading its firmware again.
+int fnusb_recover_audio(freenect_device *dev);
 
 // LIBFREENECT_LED=off: the LED stays off (see freenect_set_led()).
 int fn_led_forced_off(void);

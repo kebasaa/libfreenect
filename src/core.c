@@ -93,6 +93,11 @@ FREENECTAPI int freenect_set_hotplug_callback(freenect_context *ctx, freenect_ho
 	return 0;
 }
 
+FREENECTAPI const char *freenect_get_device_serial(freenect_device *dev)
+{
+	return dev->serial[0] ? dev->serial : NULL;
+}
+
 FREENECTAPI int freenect_device_connected(freenect_device *dev)
 {
 	return !(dev->usb_cam.device_dead || dev->usb_motor.device_dead || dev->usb_audio.device_dead);
@@ -147,6 +152,7 @@ FREENECTAPI int freenect_process_events_timeout(freenect_context *ctx, struct ti
 {
 	fn_hotplug_change changes[2 * FN_HOTPLUG_MAX];
 	struct timeval capped;
+	freenect_device *dev;
 	int nch, i, res;
 
 	// Without libusb hotplug, come back at least once per scan interval.
@@ -159,10 +165,30 @@ FREENECTAPI int freenect_process_events_timeout(freenect_context *ctx, struct ti
 	res = fnusb_process_events_timeout(&ctx->usb, timeout);
 	nch = hotplug_scan(ctx, changes, 2 * FN_HOTPLUG_MAX);
 
+	// An audio controller that rebooted into its bootloader while the rest of
+	// its Kinect is still there gets its firmware again (a few times at most).
+	for (dev = ctx->first; dev; dev = dev->next) {
+		if (dev->usb_audio.dev && dev->usb_audio.device_dead && !dev->usb_cam.device_dead &&
+		    !dev->usb_motor.device_dead && dev->audio_recover_attempts < FN_AUDIO_RECOVER_MAX) {
+			int r;
+			dev->audio_recover_attempts++;
+			if (dev->audio.running)
+				freenect_stop_audio(dev);
+			FN_WARNING("The Kinect's audio controller went away; reopening it (and loading its firmware if it restarted)\n");
+			r = fnusb_recover_audio(dev);
+			if (r == 0)
+				FN_NOTICE("The Kinect's audio controller is back\n");
+			else {
+				dev->usb_audio.device_dead = 1;
+				FN_WARNING("Could not reopen the Kinect's audio controller (%d)\n", r);
+			}
+		}
+	}
+
 	// Stop the streams of devices that were unplugged, once. Without a hotplug
 	// callback, report the loss as an error (as libfreenect always did); with
 	// one, the application learns about it from the callback.
-	freenect_device* dev = ctx->first;
+	dev = ctx->first;
 	while(dev) {
 		if (!freenect_device_connected(dev)) {
 			if (!ctx->hotplug.cb)
