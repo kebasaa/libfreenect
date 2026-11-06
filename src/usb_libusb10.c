@@ -28,6 +28,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifndef _WIN32
+#include <time.h> // clock_gettime
+#endif
 #include <libusb.h>
 #include "freenect_internal.h"
 #include "loader.h"
@@ -428,15 +431,22 @@ FN_INTERNAL int fnusb_keep_alive_led(freenect_context* ctx, libusb_device* audio
 		return res;
 	}
 
-	// we need to do this as it is possible that the device was not closed properly in a previous session
-	// if we don't do this and the device wasn't closed properly - it can cause infinite hangs on LED and TILT functions
-	libusb_reset_device(audioHandle);
-	libusb_close(audioHandle);
-
-	res = libusb_open(audio, &audioHandle);
-	if (res < 0) {
-		FN_ERROR("Failed to set the LED of K4W or 1473 device: %s\n", libusb_error_name(res));
-		return res;
+	// The LED command only exists once the audio firmware runs; in its
+	// bootloader the controller has a single interface. (This used to reset
+	// the device first, to recover from a session that did not close it
+	// cleanly. A reset re-enumerates the whole audio controller and caused
+	// LIBUSB_ERROR_IO on some systems, #580 and #557; stalled pipes are now
+	// cleared where the commands fail, and every command has a timeout.)
+	struct libusb_config_descriptor *config = NULL;
+	int interfaces = 0;
+	if (libusb_get_active_config_descriptor(audio, &config) == 0) {
+		interfaces = config->bNumInterfaces;
+		libusb_free_config_descriptor(config);
+	}
+	if (interfaces < 2) {
+		FN_INFO("Audio controller has no firmware yet; not setting the LED\n");
+		libusb_close(audioHandle);
+		return 0;
 	}
 
 	res = libusb_claim_interface(audioHandle, 0);
@@ -1088,6 +1098,24 @@ FN_INTERNAL int fnusb_bulk(fnusb_dev *dev, uint8_t endpoint, uint8_t *data, int 
 
 FN_INTERNAL int fnusb_clear_halt(fnusb_dev *dev, uint8_t endpoint) {
 	return libusb_clear_halt(dev->dev, endpoint);
+}
+
+FN_INTERNAL uint64_t fn_now_ms(void) {
+#ifdef _WIN32
+	return GetTickCount64();
+#else
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000 + (uint64_t)(ts.tv_nsec / 1000000);
+#endif
+}
+
+FN_INTERNAL void fn_sleep_ms(unsigned ms) {
+#ifdef _WIN32
+	Sleep(ms);
+#else
+	usleep((useconds_t)ms * 1000);
+#endif
 }
 
 FN_INTERNAL int fnusb_num_interfaces(fnusb_dev *dev) {

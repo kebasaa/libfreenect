@@ -283,4 +283,15 @@ struct _freenect_device {
 	int motor_control_with_audio_enabled;
 
 	fn_kinect_type device_type;
+
+	// Motor pacing (as in Microsoft's runtime): spacing of 1414 control
+	// transfers, and the tilt rate limit (>= 1 s apart, <= 15 moves per 20 s).
+	uint64_t motor_last_ctrl_ms;
+	uint64_t tilt_last_move_ms;
+	uint64_t tilt_window_start_ms;
+	int tilt_window_count;
 };
+
+// Monotonic milliseconds and sleep, shared by the device code.
+uint64_t fn_now_ms(void);
+void fn_sleep_ms(unsigned ms);
