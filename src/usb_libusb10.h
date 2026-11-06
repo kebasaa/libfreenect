@@ -104,5 +104,6 @@ int fnusb_get_max_iso_packet_size(fnusb_dev *dev, unsigned char endpoint, int de
 
 int fnusb_control(fnusb_dev *dev, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint8_t *data, uint16_t wLength);
 int fnusb_bulk(fnusb_dev *dev, uint8_t endpoint, uint8_t *data, int len, int *transferred);
+int fnusb_clear_halt(fnusb_dev *dev, uint8_t endpoint);
 int fnusb_num_interfaces(fnusb_dev *dev);
 int fnusb_has_audio_class(fnusb_dev *dev);

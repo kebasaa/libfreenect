@@ -59,7 +59,7 @@ static int get_reply(fnusb_dev* dev) {
 	res = fnusb_bulk(dev, 0x81, dump, 512, &transferred);
 	if(res != 0 || transferred != sizeof(bootloader_status_code)) {
 		FN_ERROR("Error reading reply: %d\ttransferred: %d (expected %d)\n", res, transferred, (int)(sizeof(bootloader_status_code)));
-		return res;
+		return res != 0 ? res : -1; // a short reply is an error too
 	}
 	memcpy(&buffer, dump, sizeof(bootloader_status_code));
 	if(fn_le32(buffer.magic) != 0x0a6fe000) {
@@ -71,7 +71,8 @@ static int get_reply(fnusb_dev* dev) {
 		return -1;
 	}
 	if(fn_le32(buffer.status) != 0) {
-		FN_ERROR("Notice reading reply: last uint32_t was nonzero: %d\n", buffer.status);
+		FN_ERROR("Error reading reply: the bootloader reported status %d\n", fn_le32(buffer.status));
+		return -1;
 	}
 	FN_INFO("Reading reply: ");
 	int i;
@@ -80,6 +81,17 @@ static int get_reply(fnusb_dev* dev) {
 	}
 	FN_INFO("\n");
 	return res;
+}
+
+// The bootloader answers a rejected command by stalling bulk OUT EP 0x01
+// instead of sending a status (older images also stall IN EP 0x81), so clear
+// both halts before giving up; otherwise the next attempt fails as well.
+static int abort_upload(fnusb_dev *dev) {
+	freenect_context* ctx = dev->parent->parent;
+	fnusb_clear_halt(dev, 0x01);
+	fnusb_clear_halt(dev, 0x81);
+	FN_ERROR("upload_firmware(): upload aborted; the audio controller stays in its bootloader\n");
+	return -1;
 }
 
 static int check_version_string(fnusb_dev* dev) {
@@ -335,7 +347,7 @@ FN_INTERNAL int upload_firmware_from_memory(fnusb_dev* dev, unsigned char * fw_f
 		res = fnusb_bulk(dev, 1, (unsigned char*)&bootcmd, sizeof(bootcmd), &transferred);
 		if(res != 0 || transferred != sizeof(bootcmd)) {
 			FN_ERROR("upload_firmware(): Error: res: %d\ttransferred: %d (expected %d)\n",res, transferred, (int)(sizeof(bootcmd)));
-			return -1;
+			return abort_upload(dev);
 		}
 		int bytes_sent = 0;
 		while(bytes_sent < read) {
@@ -343,12 +355,16 @@ FN_INTERNAL int upload_firmware_from_memory(fnusb_dev* dev, unsigned char * fw_f
 			res = fnusb_bulk(dev, 1, &page[bytes_sent], to_send, &transferred);
 			if(res != 0 || transferred != to_send) {
 				FN_ERROR("upload_firmware(): Error: res: %d\ttransferred: %d (expected %d)\n",res, transferred, to_send);
-				return -1;
+				return abort_upload(dev);
 			}
 			bytes_sent += to_send;
 			total_bytes_sent += to_send;
 		}
 		res = get_reply(dev);
+		if (res < 0) {
+			FN_ERROR("upload_firmware(): the bootloader rejected the page at 0x%08x\n", addr);
+			return abort_upload(dev);
+		}
 		addr += (uint32_t)read;
 		dev->parent->audio_tag++;
 	} while (read > 0);
@@ -366,9 +382,13 @@ FN_INTERNAL int upload_firmware_from_memory(fnusb_dev* dev, unsigned char * fw_f
 	res = fnusb_bulk(dev, 1, (unsigned char*)&bootcmd, sizeof(bootcmd), &transferred);
 	if(res != 0 || transferred != sizeof(bootcmd)) {
 		FN_ERROR("upload_firmware(): Error: res: %d\ttransferred: %d (expected %d)\n", res, transferred, (int)sizeof(bootcmd));
-		return -1;
+		return abort_upload(dev);
 	}
 	res = get_reply(dev);
+	if (res < 0) {
+		FN_ERROR("upload_firmware(): the bootloader rejected the execute command\n");
+		return abort_upload(dev);
+	}
 	dev->parent->audio_tag++;
 	FN_INFO("Firmware successfully uploaded and launched.  Device will disconnect and reenumerate.\n");
 	return 0;

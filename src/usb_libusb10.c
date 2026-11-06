@@ -1033,7 +1033,12 @@ FN_INTERNAL int fnusb_control(fnusb_dev *dev, uint8_t bmRequestType, uint8_t bRe
 
 FN_INTERNAL int fnusb_bulk(fnusb_dev *dev, uint8_t endpoint, uint8_t *data, int len, int *transferred) {
 	*transferred = 0;
-	return libusb_bulk_transfer(dev->dev, endpoint, data, len, transferred, 0);
+	// A finite timeout: 0 would wait forever if the audio controller stops answering.
+	return libusb_bulk_transfer(dev->dev, endpoint, data, len, transferred, 5000);
+}
+
+FN_INTERNAL int fnusb_clear_halt(fnusb_dev *dev, uint8_t endpoint) {
+	return libusb_clear_halt(dev->dev, endpoint);
 }
 
 FN_INTERNAL int fnusb_num_interfaces(fnusb_dev *dev) {
