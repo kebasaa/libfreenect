@@ -378,21 +378,14 @@ FN_INTERNAL int fnusb_claim_camera(freenect_device* dev)
 
 	int ret = 0;
 
-#ifndef _WIN32 // todo: necessary?
-	// Detach an existing kernel driver for the device
-	ret = libusb_kernel_driver_active(dev->usb_cam.dev, 0);
-	if (ret == 1)
-	{
-		ret = libusb_detach_kernel_driver(dev->usb_cam.dev, 0);
-		if (ret < 0)
-		{
-			FN_ERROR("Failed to detach camera kernel driver: %s\n", libusb_error_name(ret));
-			libusb_close(dev->usb_cam.dev);
-			dev->usb_cam.dev = NULL;
-			return ret;
-		}
-	}
-#endif
+	// On Linux the gspca_kinect kernel driver binds the camera (it serves it
+	// as a V4L2 device). Let libusb detach it when we claim the interface and
+	// re-attach it when we release it, so the V4L2 device comes back after
+	// the application closes the Kinect. Other platforms have no kernel
+	// driver to detach and return LIBUSB_ERROR_NOT_SUPPORTED, which is fine.
+	ret = libusb_set_auto_detach_kernel_driver(dev->usb_cam.dev, 1);
+	if (ret < 0 && ret != LIBUSB_ERROR_NOT_SUPPORTED)
+		FN_WARNING("Cannot enable kernel driver auto-detach for the camera: %s\n", libusb_error_name(ret));
 
 	ret = libusb_claim_interface(dev->usb_cam.dev, 0);
 	if (ret < 0)
@@ -811,10 +804,7 @@ finally:
 FN_INTERNAL int fnusb_close_subdevices(freenect_device *dev)
 {
 	if (dev->usb_cam.dev) {
-		libusb_release_interface(dev->usb_cam.dev, 0);
-#ifndef _WIN32
-		libusb_attach_kernel_driver(dev->usb_cam.dev, 0);
-#endif
+		libusb_release_interface(dev->usb_cam.dev, 0); // re-attaches gspca_kinect (auto-detach)
 		libusb_close(dev->usb_cam.dev);
 		dev->usb_cam.dev = NULL;
 	}

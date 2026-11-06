@@ -74,9 +74,9 @@ Note that firmware may not be legal to redistribute in your jurisdiction!
 
 Microsoft's own audio firmware (`UAC.BIN`) can also be used. With it, the microphones become a standard USB Audio device for the operating system (ALSA/PipeWire, Core Audio, Windows), instead of being read through libfreenect's audio API. To fetch it from Microsoft's Kinect for Windows Runtime installer:
 
-    python3 src/fwfetcher.py --uac [--from KinectRuntime-v1.8-Setup.exe] [OUTPUT]
+    python3 src/fwfetcher.py --uac [--from KinectRuntime-v1.8-Setup.exe] [--user | OUTPUT]
 
-This downloads the installer from download.microsoft.com, extracts only the firmware, verifies its SHA-256, and writes `UACFirmware.bin`, without running the installer. Put the file where libfreenect looks for firmware, for example `~/.libfreenect/` or `/usr/share/libfreenect/`. On Linux and macOS libfreenect prefers `audios.bin`; set `LIBFREENECT_AUDIO_FIRMWARE=uac` to use `UACFirmware.bin`. On Windows, `freenect-driver-install` fetches it for you. Microsoft's licence terms for the Kinect for Windows Runtime apply to this firmware.
+This downloads the installer from download.microsoft.com, extracts only the firmware, verifies its SHA-256, and writes `UACFirmware.bin`, without running the installer. OUTPUT is a `.bin` file or a directory; `--user` writes to `$XDG_DATA_HOME/libfreenect` (`~/.local/share/libfreenect`). Put the file where libfreenect looks for firmware, for example `~/.local/share/libfreenect/`, or `/usr/local/share/libfreenect/` so that the Linux plug-in service finds it too. On Linux and macOS libfreenect prefers `audios.bin`; set `LIBFREENECT_AUDIO_FIRMWARE=uac` to use `UACFirmware.bin`. On Windows, `freenect-driver-install` fetches it for you. Microsoft's licence terms for the Kinect for Windows Runtime apply to this firmware.
 
 ## Environment variables
 
@@ -111,7 +111,7 @@ Continue with [Fetch & Build](#fetch-build).
 
 ## Linux
 
-Remember to install the [udev rules](https://github.com/OpenKinect/libfreenect/tree/master/platform/linux/udev).
+`cmake --install` installs the udev rules, which give the logged-in user (and the `plugdev` group) access to the Kinect without root, and a systemd unit that uploads the audio firmware when the Kinect is plugged in. See [platform/linux](platform/linux/README.md) for details, manual installation and the `gspca_kinect` kernel driver.
 For a manual build, see [the wiki](http://openkinect.org/wiki/Getting_Started#Manual_Build_on_Linux).
 
 ### Ubuntu/Debian/Mint

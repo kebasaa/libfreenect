@@ -71,6 +71,7 @@ IF(PROJECT_OS_LINUX)
 	OPTION(BUILD_CPACK_DEB "Build an DEB using CPack" OFF)
 	OPTION(BUILD_CPACK_RPM "Build an RPM using CPack" OFF)
 	OPTION(BUILD_CPACK_TGZ "Build an TGZ using CPack" OFF)
+	OPTION(INSTALL_LINUX_INTEGRATION "Install the udev rules and the firmware-at-plug-in systemd unit" ON)
 ENDIF(PROJECT_OS_LINUX)
 
 ######################################################################################
@@ -140,6 +141,10 @@ IF(WIN32 AND BUILD_DRIVER_INSTALLER)
   add_subdirectory (platform/windows/driver-install)
 ENDIF()
 
+IF(PROJECT_OS_LINUX AND INSTALL_LINUX_INTEGRATION)
+  add_subdirectory (platform/linux)
+ENDIF()
+
 IF(BUILD_EXAMPLES)
   add_subdirectory (examples)
 ENDIF()
@@ -201,6 +206,17 @@ IF ( BUILD_CPACK_TGZ OR BUILD_CPACK_DEB OR BUILD_CPACK_RPM )
   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "libfreenect library for using kinect")
   set(CPACK_PACKAGE_NAME "libfreenect-dev")
   set(CPACK_DEBIAN_PACKAGE_DEPENDS "libusb-1.0-0-dev")
+  # Package the files where this build installs them, so that paths built
+  # into installed files (the systemd unit's ExecStart) match. Configure
+  # package builds with -DCMAKE_INSTALL_PREFIX=/usr.
+  set(CPACK_PACKAGING_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
+  if (PROJECT_OS_LINUX AND INSTALL_LINUX_INTEGRATION)
+    # Reload udev rules and systemd units after installing or removing.
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+        "${CMAKE_CURRENT_SOURCE_DIR}/platform/linux/debian/postinst;${CMAKE_CURRENT_SOURCE_DIR}/platform/linux/debian/postrm")
+    set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/platform/linux/debian/postinst")
+    set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/platform/linux/debian/postrm")
+  endif ()
 
   set(CPACK_PACKAGE_CONTACT "OpenKinect <openkinect@googlegroups.com>")
   #set(CPACK_PACKAGE_VENDOR "")

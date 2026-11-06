@@ -35,16 +35,36 @@
  * Windows and model 1473, the motor and LED) is ready before an application
  * starts.
  *
- * Usage: freenect-fwloader [--firmware FILE] [--verbose]
+ * Usage: freenect-fwloader [--firmware FILE] [--wait SECONDS] [--verbose]
  *   Without --firmware, the image is chosen as in upload_default_firmware()
  *   (src/loader.c): UACFirmware.bin or audios.bin, from the usual places or
  *   $LIBFREENECT_FIRMWARE_PATH; LIBFREENECT_AUDIO_FIRMWARE=uac|xbox forces one.
+ *   --wait keeps looking for a Kinect for up to SECONDS (at most 60) before
+ *   giving up. A plug-in trigger (the Linux udev rule and systemd unit in
+ *   platform/linux) fires when the audio controller appears, which can be
+ *   before the camera, which libfreenect uses to count sensors, is ready.
  */
 
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L /* nanosleep */
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "libfreenect.h"
+#ifdef _WIN32
+#include <windows.h>
+static void sleep_ms(int ms) { Sleep((DWORD)ms); }
+#else
+#include <time.h>
+static void sleep_ms(int ms)
+{
+	struct timespec ts;
+	ts.tv_sec = ms / 1000;
+	ts.tv_nsec = (long)(ms % 1000) * 1000000L;
+	nanosleep(&ts, NULL);
+}
+#endif
 
 static unsigned char *read_file(const char *path, unsigned int *size)
 {
@@ -72,16 +92,21 @@ int main(int argc, char **argv)
 	unsigned char *fw = NULL;
 	unsigned int fw_size = 0;
 	const char *fw_path = NULL;
-	int verbose = 0, i, n, failed = 0;
+	int verbose = 0, wait_s = 0, waited_ms, i, n, failed = 0;
 
 	for (i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "--firmware") == 0 && i + 1 < argc) {
 			fw_path = argv[++i];
+		} else if (strcmp(argv[i], "--wait") == 0 && i + 1 < argc) {
+			wait_s = atoi(argv[++i]);
+			if (wait_s < 0) wait_s = 0;
+			if (wait_s > 60) wait_s = 60;
 		} else if (strcmp(argv[i], "--verbose") == 0) {
 			verbose = 1;
 		} else {
-			printf("Usage: %s [--firmware FILE] [--verbose]\n"
-			       "Uploads the audio firmware to every connected Kinect that needs it.\n", argv[0]);
+			printf("Usage: %s [--firmware FILE] [--wait SECONDS] [--verbose]\n"
+			       "Uploads the audio firmware to every connected Kinect that needs it.\n"
+			       "--wait: keep looking for a Kinect for up to SECONDS (max 60).\n", argv[0]);
 			return strcmp(argv[i], "--help") == 0 ? 0 : 1;
 		}
 	}
@@ -106,6 +131,12 @@ int main(int argc, char **argv)
 	}
 
 	n = freenect_num_devices(ctx);
+	for (waited_ms = 0; n <= 0 && waited_ms < wait_s * 1000; waited_ms += 250) {
+		sleep_ms(250);
+		n = freenect_num_devices(ctx);
+	}
+	if (n > 0 && wait_s > 0)
+		sleep_ms(500); /* let the sensor's other functions finish enumerating */
 	if (n <= 0) {
 		printf("No Kinect found.\n");
 		freenect_shutdown(ctx);

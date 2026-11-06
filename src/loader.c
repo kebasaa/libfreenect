@@ -137,13 +137,26 @@ static int check_version_string(fnusb_dev* dev) {
 }
 
 
-// Append "<dir><sep><filename>" to the candidate list (skipped if dir is NULL or empty).
+// Append "<dir><sub>/<filename>" to the candidate list, using the first
+// dir_len characters of dir (all of it if dir_len < 0). Skipped if dir is NULL
+// or empty, or if the same path is already in the list.
+static void add_firmware_candidate_n(char candidates[][1024], int *count, int max, const char *dir, int dir_len, const char *sub, const char *filename)
+{
+	int i;
+	if (!dir || !*dir || dir_len == 0 || *count >= max)
+		return;
+	if (dir_len < 0)
+		dir_len = (int)strlen(dir);
+	snprintf(candidates[*count], 1024, "%.*s%s/%s", dir_len, dir, sub ? sub : "", filename);
+	for (i = 0; i < *count; i++)
+		if (strcmp(candidates[i], candidates[*count]) == 0)
+			return;
+	(*count)++;
+}
+
 static void add_firmware_candidate(char candidates[][1024], int *count, int max, const char *dir, const char *sub, const char *filename)
 {
-	if (!dir || !*dir || *count >= max)
-		return;
-	snprintf(candidates[*count], 1024, "%s%s/%s", dir, sub ? sub : "", filename);
-	(*count)++;
+	add_firmware_candidate_n(candidates, count, max, dir, -1, sub, filename);
 }
 
 // Open the firmware file `filename` from the first search location that has
@@ -153,14 +166,16 @@ static FILE *open_firmware_file(freenect_context *ctx, const char *filename) {
 	 *   $LIBFREENECT_FIRMWARE_PATH
 	 *   .
 	 *   ${HOME}/.libfreenect
+	 *   ${XDG_DATA_HOME:-$HOME/.local/share}/libfreenect      (not Windows)
 	 *   %LOCALAPPDATA%\libfreenect          (Windows)
 	 *   <directory of the executable>       (Windows)
 	 *   %ProgramData%\libfreenect           (Windows)
+	 *   <each $XDG_DATA_DIRS entry>/libfreenect              (not Windows)
 	 *   /usr/local/share/libfreenect
 	 *   /usr/share/libfreenect
 	 *   ./../Resources                      (OS X)
 	 */
-	enum { MAX_CANDIDATES = 9 };
+	enum { MAX_CANDIDATES = 16 };
 	char candidates[MAX_CANDIDATES][1024];
 	int count = 0;
 	int i;
@@ -169,7 +184,15 @@ static FILE *open_firmware_file(freenect_context *ctx, const char *filename) {
 	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, getenv("LIBFREENECT_FIRMWARE_PATH"), NULL, filename);
 	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, ".", NULL, filename);
 	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, getenv("HOME"), "/.libfreenect", filename);
-#ifdef _WIN32
+#ifndef _WIN32
+	{
+		const char *xdg_home = getenv("XDG_DATA_HOME");
+		if (xdg_home && *xdg_home == '/')
+			add_firmware_candidate(candidates, &count, MAX_CANDIDATES, xdg_home, "/libfreenect", filename);
+		else
+			add_firmware_candidate(candidates, &count, MAX_CANDIDATES, getenv("HOME"), "/.local/share/libfreenect", filename);
+	}
+#else
 	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, getenv("LOCALAPPDATA"), "/libfreenect", filename);
 	{
 		char exe_dir[MAX_PATH];
@@ -183,6 +206,19 @@ static FILE *open_firmware_file(freenect_context *ctx, const char *filename) {
 		}
 	}
 	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, getenv("ProgramData"), "/libfreenect", filename);
+#endif
+#ifndef _WIN32
+	{
+		// $XDG_DATA_DIRS is a colon-separated list; relative entries are ignored.
+		const char *dirs = getenv("XDG_DATA_DIRS");
+		while (dirs && *dirs) {
+			const char *end = strchr(dirs, ':');
+			int len = end ? (int)(end - dirs) : (int)strlen(dirs);
+			if (dirs[0] == '/')
+				add_firmware_candidate_n(candidates, &count, MAX_CANDIDATES, dirs, len, "/libfreenect", filename);
+			dirs = end ? end + 1 : NULL;
+		}
+	}
 #endif
 	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, "/usr/local/share/libfreenect", NULL, filename);
 	add_firmware_candidate(candidates, &count, MAX_CANDIDATES, "/usr/share/libfreenect", NULL, filename);

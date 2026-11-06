@@ -92,8 +92,9 @@ jobs:
 
       - name: Configure
         run: >
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
           -DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_FAKENECT=ON
+          -DBUILD_CPACK_DEB=ON
 
       - name: Build
         run: cmake --build build --parallel
@@ -104,6 +105,55 @@ jobs:
           ./build/bin/freenect-fwloader
           code=$?
           test "$code" -eq 2 || { echo "freenect-fwloader should report no Kinect (exit 2), got $code"; exit 1; }
+          start=$(date +%s)
+          ./build/bin/freenect-fwloader --wait 2
+          code=$?
+          took=$(( $(date +%s) - start ))
+          test "$code" -eq 2 || { echo "freenect-fwloader --wait 2 should report no Kinect (exit 2), got $code"; exit 1; }
+          test "$took" -le 5 || { echo "freenect-fwloader --wait 2 took ${took}s"; exit 1; }
+
+      - name: Check the udev rules and the systemd unit
+        run: |
+          set -e
+          udevadm verify --no-style platform/linux/udev/51-kinect.rules
+          # every Kinect v1 USB function gets access without root
+          for pid in 02ae 02bf 02b0 02af 02ad 02be 02bb 02c3; do
+            grep -E "^ATTR\{idProduct\}==\"[^\"]*$pid" platform/linux/udev/51-kinect.rules | grep -q 'TAG+="uaccess"' \
+              || { echo "no uaccess rule for 045e:$pid"; exit 1; }
+          done
+          grep -q '^ExecStart=/usr/bin/freenect-fwloader ' build/platform/linux/freenect-fwloader.service
+          grep -q '^TimeoutStartSec=' build/platform/linux/freenect-fwloader.service
+          # systemd-analyze needs the program in ExecStart to exist
+          sed 's#^ExecStart=/usr/bin/freenect-fwloader#ExecStart='"$PWD"'/build/bin/freenect-fwloader#' \
+            build/platform/linux/freenect-fwloader.service > "$RUNNER_TEMP/freenect-fwloader.service"
+          systemd-analyze verify "$RUNNER_TEMP/freenect-fwloader.service"
+
+      - name: Install to a staging directory
+        run: |
+          set -e
+          DESTDIR="$RUNNER_TEMP/stage" cmake --install build
+          cd "$RUNNER_TEMP/stage"
+          find . -type f | sort
+          test -f usr/lib/udev/rules.d/51-kinect.rules
+          test -f usr/lib/systemd/system/freenect-fwloader.service
+          test -x usr/bin/freenect-fwloader
+          test -f usr/share/doc/libfreenect/linux/kinect.conf
+
+      - name: Build the .deb, check its contents, install and remove it
+        run: |
+          set -e
+          (cd build && cpack -G DEB)
+          deb=$(ls build/*.deb)
+          dpkg-deb -c "$deb" | tee "$RUNNER_TEMP/deb.txt"
+          grep -q './usr/lib/udev/rules.d/51-kinect.rules$' "$RUNNER_TEMP/deb.txt"
+          grep -q './usr/lib/systemd/system/freenect-fwloader.service$' "$RUNNER_TEMP/deb.txt"
+          grep -q './usr/bin/freenect-fwloader$' "$RUNNER_TEMP/deb.txt"
+          dpkg-deb --ctrl-tarfile "$deb" | tar -t | grep -q postinst
+          sudo apt-get install -y "./$deb"
+          test -f /usr/lib/udev/rules.d/51-kinect.rules
+          systemctl cat freenect-fwloader.service >/dev/null
+          sudo apt-get remove -y libfreenect-dev
+          test ! -e /usr/lib/udev/rules.d/51-kinect.rules
 
   macos:
     name: macOS (Apple Silicon)

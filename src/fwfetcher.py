@@ -736,14 +736,51 @@ def fetch_uac_firmware(target, installer_path=None):
     print("Wrote", target, "(%d bytes, SHA-256 verified)" % len(firmware))
 
 
+def uac_target(output, user):
+    """Where --uac writes the firmware. OUTPUT is a file if it ends in .bin and
+    a directory otherwise (created if needed, firmware named UACFirmware.bin);
+    --user means $XDG_DATA_HOME/libfreenect (~/.local/share/libfreenect)."""
+    if user:
+        base = os.environ.get("XDG_DATA_HOME", "")
+        if not base.startswith("/"):
+            base = os.path.join(os.path.expanduser("~"), ".local", "share")
+        output = os.path.join(base, "libfreenect")
+    if output is None:
+        return "UACFirmware.bin"
+    if output.lower().endswith(".bin"):
+        return output
+    if not os.path.isdir(output):
+        os.makedirs(output)
+    return os.path.join(output, "UACFirmware.bin")
+
+
 if __name__ == "__main__" and len(sys.argv) >= 2 and sys.argv[1] == "--uac":
-    # fwfetcher.py --uac [--from INSTALLER] [OUTPUT]   (default output: UACFirmware.bin)
+    # fwfetcher.py --uac [--from INSTALLER] [--user | OUTPUT]
+    #   OUTPUT: a .bin file, or a directory to put UACFirmware.bin in
+    #   (default: UACFirmware.bin in the current directory)
     args = sys.argv[2:]
     installer_path = None
-    if len(args) >= 2 and args[0] == "--from":
-        installer_path = args[1]
-        args = args[2:]
-    fetch_uac_firmware(args[0] if args else "UACFirmware.bin", installer_path)
+    user = False
+    output = None
+    while args:
+        if args[0] == "--from" and len(args) >= 2:
+            installer_path = args[1]
+            args = args[2:]
+        elif args[0] == "--user":
+            user = True
+            args = args[1:]
+        elif not args[0].startswith("-") and output is None:
+            output = args[0]
+            args = args[1:]
+        else:
+            sys.exit("usage: fwfetcher.py --uac [--from INSTALLER] [--user | OUTPUT]")
+    if user and output is not None:
+        sys.exit("error: give either --user or OUTPUT, not both")
+    try:
+        target = uac_target(output, user)
+    except OSError as e:
+        sys.exit("error: cannot create the output directory: %s" % e)
+    fetch_uac_firmware(target, installer_path)
     sys.exit(0)
 
 if __name__ == "__main__":
