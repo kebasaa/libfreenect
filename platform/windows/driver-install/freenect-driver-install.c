@@ -68,6 +68,7 @@
 #include <mscat.h>
 #include <mssip.h>
 #include <cryptuiapi.h>
+#include "uac_firmware.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -745,13 +746,47 @@ static int cmd_uninstall(int quiet)
 	c2 = remove_our_certs(L"Root");
 	rescan_devices();
 	if (!quiet) {
+		/* The firmware goes only on an explicit --uninstall, not when
+		 * --install cleans up before reinstalling. */
+		wchar_t fw[MAX_PATH];
+		uac_default_dir(fw, MAX_PATH);
+		wcscat_s(fw, MAX_PATH, L"\\" UAC_FIRMWARE_NAME);
+		if (DeleteFileW(fw))
+			wprintf(L"Removed the Kinect audio firmware %ls\n", fw);
 		wprintf(L"Removed %d device(s), %d driver package(s) and %d certificate(s).\n", devices, pk, c1 + c2);
 		wprintf(L"The Kinect functions now have no driver until one is installed again.\n");
 	}
 	return 0;
 }
 
-static int cmd_install(void)
+static void firmware_notice(void)
+{
+	wprintf(L"\nThe Kinect's audio controller needs Microsoft's firmware (UAC.BIN). This downloads\n"
+	        L"Microsoft's Kinect for Windows Runtime v1.8 (111 MB) from download.microsoft.com,\n"
+	        L"checks that Microsoft signed it, and extracts only the firmware file. The Runtime\n"
+	        L"is not installed. Microsoft's licence terms for the Kinect for Windows Runtime\n"
+	        L"apply to the firmware. Skip this step with --no-firmware.\n\n");
+}
+
+/* --fetch-firmware [--from INSTALLER] [DIR] */
+static int cmd_fetch_firmware(int argc, wchar_t **argv)
+{
+	wchar_t dir[MAX_PATH];
+	const wchar_t *from = NULL;
+	int i;
+	uac_default_dir(dir, MAX_PATH);
+	for (i = 2; i < argc; i++) {
+		if (wcscmp(argv[i], L"--from") == 0 && i + 1 < argc)
+			from = argv[++i];
+		else
+			wcscpy_s(dir, MAX_PATH, argv[i]);
+	}
+	if (!from)
+		firmware_notice();
+	return uac_fetch_firmware(dir, from) == 0 ? 0 : 1;
+}
+
+static int cmd_install(int with_firmware)
 {
 	wchar_t dir[MAX_PATH], inf_path[MAX_PATH], oem_name[MAX_PATH];
 	PCCERT_CONTEXT cert;
@@ -785,6 +820,16 @@ static int cmd_install(void)
 		wprintf(L"No Kinect is plugged in; WinUSB will be used automatically when it is.\n");
 	if (st.reboot)
 		wprintf(L"Windows asks for a reboot to finish.\n");
+
+	if (with_firmware) {
+		wchar_t fwdir[MAX_PATH];
+		firmware_notice();
+		uac_default_dir(fwdir, MAX_PATH);
+		/* The driver is installed either way; a failed download is reported
+		 * and can be retried with --fetch-firmware. */
+		if (uac_fetch_firmware(fwdir, NULL) != 0)
+			wprintf(L"The driver is installed, but the audio firmware is not. Retry with --fetch-firmware.\n");
+	}
 	return st.failed ? 1 : 0;
 }
 
@@ -810,8 +855,12 @@ static void usage(void)
 {
 	wprintf(L"freenect-driver-install: bind the Kinect v1 to Microsoft's in-box WinUSB driver\n\n"
 	        L"  --list               show the Kinect USB functions and their current drivers\n"
-	        L"  --install            install WinUSB for them (run as Administrator)\n"
+	        L"  --install            install WinUSB for them and fetch the audio firmware\n"
+	        L"                       (run as Administrator; add --no-firmware to skip the firmware)\n"
 	        L"  --uninstall          remove what --install added (run as Administrator)\n"
+	        L"  --fetch-firmware [--from INSTALLER] [DIR]\n"
+	        L"                       only fetch the audio firmware (UAC.BIN) from Microsoft's Kinect\n"
+	        L"                       Runtime installer into DIR (default %%ProgramData%%\\libfreenect)\n"
 	        L"  --package-only DIR   only build and sign the driver package in DIR\n");
 }
 
@@ -821,12 +870,16 @@ int wmain(int argc, wchar_t **argv)
 		return cmd_list();
 	if (argc >= 3 && wcscmp(argv[1], L"--package-only") == 0)
 		return cmd_package_only(argv[2]);
+	if (argc >= 2 && wcscmp(argv[1], L"--fetch-firmware") == 0)
+		return cmd_fetch_firmware(argc, argv);
 	if (argc >= 2 && (wcscmp(argv[1], L"--install") == 0 || wcscmp(argv[1], L"--uninstall") == 0)) {
 		if (!is_elevated()) {
 			fwprintf(stderr, L"error: %ls needs Administrator rights. Run it from an elevated terminal.\n", argv[1]);
 			return 1;
 		}
-		return wcscmp(argv[1], L"--install") == 0 ? cmd_install() : cmd_uninstall(0);
+		if (wcscmp(argv[1], L"--install") == 0)
+			return cmd_install(!(argc >= 3 && wcscmp(argv[2], L"--no-firmware") == 0));
+		return cmd_uninstall(0);
 	}
 	usage();
 	return argc >= 2 && wcscmp(argv[1], L"--help") != 0 ? 1 : 0;

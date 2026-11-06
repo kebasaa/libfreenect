@@ -44,7 +44,7 @@ It binds these functions:
 
 The microphone-array interfaces (2 and 3) of 045E:02BB/02C3 are left alone, so Windows' own USB Audio driver keeps them and the four microphones show up as a normal recording device.
 
-`--uninstall` removes every package and certificate the tool has added.
+`--uninstall` removes every package and certificate the tool has added, and the downloaded audio firmware.
 
 To check a package without changing the system, use:
 
@@ -60,7 +60,21 @@ If you use [UsbDk](https://github.com/daynix/UsbDk) instead, set `LIBFREENECT_US
 
 ## Audio firmware
 
-The Kinect's audio controller needs firmware (`audios.bin`, fetched with `src/fwfetcher.py`) after every power-up.
+The Kinect's audio controller needs firmware after every power-up.
+
+**Microsoft's firmware (`UAC.BIN`).** At the end of `--install`, `freenect-driver-install` fetches Microsoft's firmware (skip that with `--no-firmware`):
+1. It downloads Microsoft's Kinect for Windows Runtime v1.8 installer (about 111 MB) from download.microsoft.com.
+2. It checks that Microsoft Corporation signed it.
+3. It extracts only the firmware file, without running the installer, and verifies the firmware's SHA-256.
+4. It saves the firmware as `%ProgramData%\libfreenect\UACFirmware.bin`, and deletes the downloaded installer.
+
+libfreenect doesn't distribute Microsoft's firmware, and Microsoft's licence terms for the Kinect for Windows Runtime apply to it. To fetch it on its own:
+
+    freenect-driver-install --fetch-firmware [--from KinectRuntime-v1.8-Setup.exe] [DIR]
+
+`--from` uses an installer you've already downloaded instead of downloading it again.
+
+**Xbox firmware (`audios.bin`).** `src/fwfetcher.py` fetches it from the Xbox 360 system update. It's the firmware libfreenect's own audio API uses.
 On Kinect for Windows and the Xbox model 1473 it also controls the motor and LED.
 libfreenect uploads the firmware when an application opens the audio device.
 To do it ahead of time, for example at login, run:
