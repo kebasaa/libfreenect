@@ -36,3 +36,8 @@ if (BUILD_EXAMPLES AND FREENECT_GL_BACKEND STREQUAL "GLFW" AND UNIX AND NOT APPL
            COMMAND sh -c "\"$<TARGET_FILE:test_fn_glut>\" blocked; c=$?; [ $c -eq 77 ] && exit 77; [ $c -eq 142 ]")
   set_tests_properties(fn_glut_close fn_glut_watchdog PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 20)
 endif ()
+
+# Frame reassembly from the camera's packets (src/stream.c): only complete
+# frames are delivered, and the first video frames after a start are skipped.
+add_executable(test_stream test_stream.c ${CMAKE_SOURCE_DIR}/src/stream.c)
+add_test(NAME stream COMMAND test_stream)

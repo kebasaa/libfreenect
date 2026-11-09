@@ -246,7 +246,19 @@ typedef struct {
 	void *usr_buf;
 	uint8_t *raw_buf;
 	void *proc_buf;
+	int frame_bad;               // a packet of the open frame was lost or short
+	int keep_incomplete;         // LIBFREENECT_INCOMPLETE_FRAMES=1: deliver such frames anyway
+	int skip_frames;             // complete frames still to skip after the stream start
+	unsigned int dropped_frames; // incomplete frames dropped since the stream start
+	unsigned int bad_magic;      // packets without the "RB" header
 } packet_stream;
+
+// Frame reassembly from the camera's isochronous packets (stream.c).
+// stream_process() returns the size of a completed frame, or 0.
+FN_INTERNAL int stream_process(freenect_context *ctx, packet_stream *strm, uint8_t *pkt, int len, freenect_chunk_cb cb, void *user_data);
+FN_INTERNAL void stream_init(freenect_context *ctx, packet_stream *strm, int rlen, int plen);
+FN_INTERNAL void stream_freebufs(freenect_context *ctx, packet_stream *strm);
+FN_INTERNAL int stream_setbuf(freenect_context *ctx, packet_stream *strm, void *pbuf);
 
 typedef struct {
 	int running;
