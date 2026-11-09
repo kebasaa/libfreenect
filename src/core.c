@@ -169,6 +169,12 @@ FREENECTAPI int freenect_process_events_timeout(freenect_context *ctx, struct ti
 	res = fnusb_process_events_timeout(&ctx->usb, timeout);
 	nch = hotplug_scan(ctx, changes, 2 * FN_HOTPLUG_MAX);
 
+	// Kinect for Windows colour settings go to the camera here, outside
+	// libusb's event handling, once video frames arrive.
+	for (dev = ctx->first; dev; dev = dev->next)
+		if (dev->color_pending)
+			fn_color_apply_pending(dev);
+
 	// An audio controller that rebooted into its bootloader while the rest of
 	// its Kinect is still there gets its firmware again (a few times at most).
 	for (dev = ctx->first; dev; dev = dev->next) {
@@ -274,6 +280,7 @@ FREENECTAPI int freenect_open_device(freenect_context *ctx, freenect_device **de
 	memset(pdev, 0, sizeof(*pdev));
 
 	pdev->parent = ctx;
+	fn_color_init(pdev);
 
 	res = fnusb_open_subdevices(pdev, index);
 	if (res < 0) {

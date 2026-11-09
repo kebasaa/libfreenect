@@ -91,6 +91,10 @@ This downloads the installer from download.microsoft.com, extracts only the firm
 
 Distances outside the range are delivered as 0. Earlier versions of libfreenect used a slightly different formula, with a 0.375-pixel offset, which gave shorter distances: with the reference sample calibration about 0.5 % at 1.2 m, 1.7 % at 4 m and 3 % at 7 m.
 
+## Colour camera settings (Kinect for Windows)
+
+The Kinect for Windows (model 1517) has the colour controls of Microsoft's SDK: auto exposure, exposure time, frame interval, gain, brightness, power-line frequency, backlight compensation, auto white balance, white balance, contrast, hue, saturation, gamma and sharpness. Set them with `freenect_set_color_setting()`, with the SDK's values, ranges and defaults (listed with `freenect_color_setting` in `libfreenect.h`). The camera accepts them only while video streams, so libfreenect keeps them and sends them once frames arrive, and again after every video start. On the Xbox 360 models the functions return `-ENOTSUP`, as the SDK does.
+
 ## Environment variables
 
 These change libfreenect's behaviour for every application:

@@ -151,6 +151,13 @@ namespace Freenect {
 		int setDepthRange(freenect_depth_range range) {
 			return freenect_set_depth_range(m_dev, range);
 		}
+		// Kinect for Windows only; -ENOTSUP on other models
+		int setColorSetting(freenect_color_setting setting, double value) {
+			return freenect_set_color_setting(m_dev, setting, value);
+		}
+		int getColorSetting(freenect_color_setting setting, double &value) {
+			return freenect_get_color_setting(m_dev, setting, &value);
+		}
 		freenect_depth_range getDepthRange() {
 			return freenect_get_depth_range(m_dev);
 		}

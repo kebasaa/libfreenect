@@ -112,6 +112,8 @@ int freenect_stop_video(freenect_device *dev) { (void)dev; stops_video++; return
 int freenect_stop_audio(freenect_device *dev) { (void)dev; stops_audio++; return 0; }
 int freenect_set_led(freenect_device *dev, freenect_led_options o) { (void)dev; (void)o; return 0; }
 int fn_led_forced_off(void) { return 0; }
+void fn_color_init(freenect_device *dev) { (void)dev; }
+void fn_color_apply_pending(freenect_device *dev) { (void)dev; }
 uint64_t fn_now_ms(void) { return clock_ms; }
 
 /* ---- application -------------------------------------------------------- */

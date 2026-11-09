@@ -28,6 +28,7 @@
 #include "platform.h"
 #include "parson.h"
 #include "registration.h"
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -620,6 +621,19 @@ int freenect_set_ir_emitter(freenect_device *dev, int on)
 {
 	(void)dev; (void)on;
 	return 0;
+}
+
+// A recording has no colour camera to set.
+int freenect_set_color_setting(freenect_device *dev, freenect_color_setting setting, double value)
+{
+	(void)dev; (void)setting; (void)value;
+	return -ENOTSUP;
+}
+
+int freenect_get_color_setting(freenect_device *dev, freenect_color_setting setting, double *value)
+{
+	(void)dev; (void)setting; (void)value;
+	return -ENOTSUP;
 }
 
 int freenect_supported_subdevices(void)

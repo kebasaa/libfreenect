@@ -765,6 +765,47 @@ FREENECTAPI int freenect_set_depth_range(freenect_device *dev, freenect_depth_ra
  */
 FREENECTAPI freenect_depth_range freenect_get_depth_range(freenect_device *dev);
 
+/// Colour camera settings of the Kinect for Windows (model 1517), with the
+/// same values, ranges and defaults as the Kinect for Windows SDK's
+/// INuiColorCameraSettings. Other models don't have them.
+typedef enum {
+	FREENECT_COLOR_AUTO_EXPOSURE = 0,       /**< 0 or 1. Default 1 */
+	FREENECT_COLOR_EXPOSURE_TIME,           /**< 1-4000, in the SDK's units. Default 4000. Only with auto exposure off */
+	FREENECT_COLOR_FRAME_INTERVAL,          /**< 0-4000, in the SDK's units. Default 0. Only with auto exposure off */
+	FREENECT_COLOR_GAIN,                    /**< 1.0-16.0. Default 1.0. Only with auto exposure off */
+	FREENECT_COLOR_BRIGHTNESS,              /**< 0.0-1.0. Default 0.2156863. Only with auto exposure on */
+	FREENECT_COLOR_POWER_LINE_FREQUENCY,    /**< 0 off, 1 50 Hz, 2 60 Hz. Default 0. Only with auto exposure on */
+	FREENECT_COLOR_BACKLIGHT_COMPENSATION,  /**< 0 average brightness, 1 centre priority, 2 low lights priority, 4 centre only. Default 0. Only with auto exposure on */
+	FREENECT_COLOR_AUTO_WHITE_BALANCE,      /**< 0 or 1. Default 1 */
+	FREENECT_COLOR_WHITE_BALANCE,           /**< 2700-6500 K. Default 2700. Only with auto white balance off */
+	FREENECT_COLOR_CONTRAST,                /**< 0.5-2.0. Default 1.0 */
+	FREENECT_COLOR_HUE,                     /**< -22.0-22.0. Default 0 */
+	FREENECT_COLOR_SATURATION,              /**< 0.0-2.0. Default 1.0 */
+	FREENECT_COLOR_GAMMA,                   /**< 1.0-2.8. Default 2.2 */
+	FREENECT_COLOR_SHARPNESS,               /**< 0.0-1.0. Default 0.5 */
+	FREENECT_COLOR_SETTING_COUNT,           /**< Number of settings; not a setting */
+} freenect_color_setting;
+
+/**
+ * Sets a colour camera setting of a Kinect for Windows. The value is kept
+ * and sent to the camera once a video stream delivers frames, and again
+ * after every video start. A setting that depends on auto exposure or auto
+ * white balance takes effect when that is in the required state.
+ *
+ * @return 0 on success, -ENOTSUP if this Kinect isn't a Kinect for Windows,
+ *         -EINVAL if the setting or value is out of range, < 0 on other errors
+ */
+FREENECTAPI int freenect_set_color_setting(freenect_device *dev, freenect_color_setting setting, double value);
+
+/**
+ * Gets a colour camera setting of a Kinect for Windows: the value set last,
+ * or the default.
+ *
+ * @return 0 on success, -ENOTSUP if this Kinect isn't a Kinect for Windows,
+ *         -EINVAL if the setting is out of range
+ */
+FREENECTAPI int freenect_get_color_setting(freenect_device *dev, freenect_color_setting setting, double *value);
+
 /**
  * Switches the IR projector (laser) on or off.
  *

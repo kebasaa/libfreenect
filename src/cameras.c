@@ -872,6 +872,7 @@ int freenect_start_video(freenect_device *dev)
 	write_register(dev, hflip_reg, 0x00); // disable Hflip
 
 	dev->video.running = 1;
+	fn_color_on_video_start(dev); // Kinect for Windows colour settings, sent once frames arrive
 	return 0;
 }
 

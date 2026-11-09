@@ -51,3 +51,13 @@ add_test(NAME decimate COMMAND test_decimate)
 # the three ranges.
 add_executable(test_depth_lut test_depth_lut.c)
 add_test(NAME depth_lut COMMAND test_depth_lut)
+
+# Kinect for Windows colour settings (src/color_settings.h): the register
+# encodings of the reference's §10C.2.
+add_executable(test_color_settings test_color_settings.c)
+add_test(NAME color_settings COMMAND test_color_settings)
+
+# The colour settings' device side (src/color.c) against a simulated camera:
+# order of writes, read-back, preconditions, when they are sent.
+add_executable(test_color_device test_color_device.c ${CMAKE_SOURCE_DIR}/src/color.c)
+add_test(NAME color_device COMMAND test_color_device)

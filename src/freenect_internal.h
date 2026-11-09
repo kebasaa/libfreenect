@@ -260,6 +260,11 @@ FN_INTERNAL void stream_init(freenect_context *ctx, packet_stream *strm, int rle
 FN_INTERNAL void stream_freebufs(freenect_context *ctx, packet_stream *strm);
 FN_INTERNAL int stream_setbuf(freenect_context *ctx, packet_stream *strm, void *pbuf);
 
+// Kinect for Windows colour settings (color.c)
+FN_INTERNAL void fn_color_init(freenect_device *dev);
+FN_INTERNAL void fn_color_on_video_start(freenect_device *dev);
+FN_INTERNAL void fn_color_apply_pending(freenect_device *dev);
+
 typedef struct {
 	int running;
 
@@ -314,6 +319,9 @@ struct _freenect_device {
 	freenect_chunk_cb depth_chunk_cb;
 	freenect_chunk_cb video_chunk_cb;
 	freenect_depth_range depth_range; // distances kept in millimetre depth (default: FREENECT_DEPTH_RANGE_FULL)
+	double color_value[FREENECT_COLOR_SETTING_COUNT]; // Kinect for Windows colour settings (color.c)
+	uint32_t color_set_mask; // bit per setting the application set
+	uint32_t color_pending;  // bit per setting still to be sent to the camera
 	uint16_t *depth_full; // 640x480 work buffer for the 320x240 and 80x60 depth modes
 	int depth_mirrored;    // FREENECT_MIRROR_DEPTH is on (the camera mirrors depth)
 	freenect_video_format video_format;
