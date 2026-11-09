@@ -83,7 +83,10 @@ int freenect_set_flag(freenect_device *dev, freenect_flag flag, freenect_flag_va
         int reg = register_for_flag(flag);
         if (reg < 0)
             return reg;
-        return write_register(dev, reg, value);
+        int ret = write_register(dev, reg, value);
+        if (ret >= 0 && flag == FREENECT_MIRROR_DEPTH)
+            dev->depth_mirrored = value == FREENECT_ON; // the 320x240 and 80x60 depth modes follow it
+        return ret;
     }
 
 	uint16_t cmos_value = read_cmos_register(dev, 0x0106);

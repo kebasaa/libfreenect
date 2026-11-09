@@ -33,6 +33,9 @@
 #include "registration.h"
 #include "cameras.h"
 #include "flags.h"
+#include "depth_decimate.h"
+
+static freenect_frame_mode video_mode_for_device(freenect_device *dev, freenect_resolution res, freenect_video_format fmt);
 
 #define MAKE_RESERVED(res, fmt) (uint32_t)(((res & 0xff) << 8) | (((fmt & 0xff))))
 #define RESERVED_TO_RESOLUTION(reserved) (freenect_resolution)((reserved >> 8) & 0xff)
@@ -61,7 +64,7 @@ static freenect_frame_mode supported_video_modes[video_mode_count] = {
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_VIDEO_YUV_RAW), FREENECT_RESOLUTION_MEDIUM, {FREENECT_VIDEO_YUV_RAW}, 640*480*2, 640, 480, 16, 0, 15, 1 },
 };
 
-#define depth_mode_count 6
+#define depth_mode_count 14
 static freenect_frame_mode supported_depth_modes[depth_mode_count] = {
 	// reserved, resolution, format, bytes, width, height, data_bits_per_pixel, padding_bits_per_pixel, framerate, is_valid
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_11BIT), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_11BIT}, 640*480*2, 640, 480, 11, 5, 30, 1},
@@ -70,6 +73,15 @@ static freenect_frame_mode supported_depth_modes[depth_mode_count] = {
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_10BIT_PACKED), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_10BIT_PACKED}, 640*480*10/8, 640, 480, 10, 0, 30, 1},
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_REGISTERED), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_REGISTERED}, 640*480*2, 640, 480, 16, 0, 30, 1},
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_MM), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_MM}, 640*480*2, 640, 480, 16, 0, 30, 1},
+	// 320x240 and 80x60: taken from the 640x480 frame in software (§20.2.4)
+	{MAKE_RESERVED(FREENECT_RESOLUTION_LOW, FREENECT_DEPTH_11BIT), FREENECT_RESOLUTION_LOW, {FREENECT_DEPTH_11BIT}, 320*240*2, 320, 240, 11, 5, 30, 1},
+	{MAKE_RESERVED(FREENECT_RESOLUTION_LOW, FREENECT_DEPTH_10BIT), FREENECT_RESOLUTION_LOW, {FREENECT_DEPTH_10BIT}, 320*240*2, 320, 240, 10, 6, 30, 1},
+	{MAKE_RESERVED(FREENECT_RESOLUTION_LOW, FREENECT_DEPTH_REGISTERED), FREENECT_RESOLUTION_LOW, {FREENECT_DEPTH_REGISTERED}, 320*240*2, 320, 240, 16, 0, 30, 1},
+	{MAKE_RESERVED(FREENECT_RESOLUTION_LOW, FREENECT_DEPTH_MM), FREENECT_RESOLUTION_LOW, {FREENECT_DEPTH_MM}, 320*240*2, 320, 240, 16, 0, 30, 1},
+	{MAKE_RESERVED(FREENECT_RESOLUTION_VERY_LOW, FREENECT_DEPTH_11BIT), FREENECT_RESOLUTION_VERY_LOW, {FREENECT_DEPTH_11BIT}, 80*60*2, 80, 60, 11, 5, 30, 1},
+	{MAKE_RESERVED(FREENECT_RESOLUTION_VERY_LOW, FREENECT_DEPTH_10BIT), FREENECT_RESOLUTION_VERY_LOW, {FREENECT_DEPTH_10BIT}, 80*60*2, 80, 60, 10, 6, 30, 1},
+	{MAKE_RESERVED(FREENECT_RESOLUTION_VERY_LOW, FREENECT_DEPTH_REGISTERED), FREENECT_RESOLUTION_VERY_LOW, {FREENECT_DEPTH_REGISTERED}, 80*60*2, 80, 60, 16, 0, 30, 1},
+	{MAKE_RESERVED(FREENECT_RESOLUTION_VERY_LOW, FREENECT_DEPTH_MM), FREENECT_RESOLUTION_VERY_LOW, {FREENECT_DEPTH_MM}, 80*60*2, 80, 60, 16, 0, 30, 1},
 };
 
 /**
@@ -172,18 +184,20 @@ static void depth_process(freenect_device *dev, uint8_t *pkt, int len)
 	FN_SPEW("Got depth frame of size %d/%d, %d/%d packets arrived, TS %08x\n", got_frame_size,
 	        dev->depth.frame_size, dev->depth.valid_pkts, dev->depth.pkts_per_frame, dev->depth.timestamp);
 
+	// 320x240 and 80x60 are converted at 640x480 into depth_full first.
+	uint16_t *full = dev->depth_full ? dev->depth_full : (uint16_t*)dev->depth.proc_buf;
 	switch (dev->depth_format) {
 		case FREENECT_DEPTH_11BIT:
-			convert_packed11_to_16bit(dev->depth.raw_buf, (uint16_t*)dev->depth.proc_buf, 640*480);
+			convert_packed11_to_16bit(dev->depth.raw_buf, full, 640*480);
 			break;
 		case FREENECT_DEPTH_REGISTERED:
-			freenect_apply_registration(dev, dev->depth.raw_buf, (uint16_t*)dev->depth.proc_buf, false);
+			freenect_apply_registration(dev, dev->depth.raw_buf, full, false);
 			break;
 		case FREENECT_DEPTH_MM:
-			freenect_apply_depth_to_mm(dev, dev->depth.raw_buf, (uint16_t*)dev->depth.proc_buf );
+			freenect_apply_depth_to_mm(dev, dev->depth.raw_buf, full);
 			break;
 		case FREENECT_DEPTH_10BIT:
-			convert_packed_to_16bit(dev->depth.raw_buf, (uint16_t*)dev->depth.proc_buf, 10, 640*480);
+			convert_packed_to_16bit(dev->depth.raw_buf, full, 10, 640*480);
 			break;
 		case FREENECT_DEPTH_10BIT_PACKED:
 		case FREENECT_DEPTH_11BIT_PACKED:
@@ -192,6 +206,9 @@ static void depth_process(freenect_device *dev, uint8_t *pkt, int len)
 			FN_ERROR("depth_process() was called, but an invalid depth_format is set\n");
 			break;
 	}
+	if (dev->depth_full)
+		fn_decimate_depth(dev->depth_full, (uint16_t*)dev->depth.proc_buf,
+		                  dev->depth_resolution == FREENECT_RESOLUTION_VERY_LOW ? 8 : 2, dev->depth_mirrored);
 	if (dev->depth_cb)
 		dev->depth_cb(dev, dev->depth.proc_buf, dev->depth.timestamp);
 }
@@ -629,16 +646,31 @@ int freenect_start_depth(freenect_device *dev)
 	dev->depth.flag = 0x70;
 	dev->depth.variable_length = 0;
 
+	// The camera always sends 640x480; 320x240 and 80x60 are taken from it
+	// after conversion (§20.2.4), so they need a 640x480 work buffer.
+	freenect_frame_mode out_mode = freenect_find_depth_mode(dev->depth_resolution, dev->depth_format);
+	if (!out_mode.is_valid) {
+		FN_ERROR("freenect_start_depth(): invalid depth format/resolution combination\n");
+		return -1;
+	}
+	free(dev->depth_full);
+	dev->depth_full = NULL;
+	if (dev->depth_resolution != FREENECT_RESOLUTION_MEDIUM) {
+		dev->depth_full = (uint16_t*)malloc(640*480*sizeof(uint16_t));
+		if (!dev->depth_full)
+			return -1;
+	}
+
 	switch (dev->depth_format) {
 		case FREENECT_DEPTH_REGISTERED:
 		case FREENECT_DEPTH_MM:
 			freenect_init_registration(dev);
 			// fall through - these are computed from the 11-bit stream
 		case FREENECT_DEPTH_11BIT:
-			stream_init(ctx, &dev->depth, freenect_find_depth_mode(dev->depth_resolution, FREENECT_DEPTH_11BIT_PACKED).bytes, freenect_find_depth_mode(dev->depth_resolution, FREENECT_DEPTH_11BIT).bytes);
+			stream_init(ctx, &dev->depth, freenect_find_depth_mode(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_11BIT_PACKED).bytes, out_mode.bytes);
 			break;
 		case FREENECT_DEPTH_10BIT:
-			stream_init(ctx, &dev->depth, freenect_find_depth_mode(dev->depth_resolution, FREENECT_DEPTH_10BIT_PACKED).bytes, freenect_find_depth_mode(dev->depth_resolution, FREENECT_DEPTH_10BIT).bytes);
+			stream_init(ctx, &dev->depth, freenect_find_depth_mode(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_10BIT_PACKED).bytes, out_mode.bytes);
 			break;
 		case FREENECT_DEPTH_11BIT_PACKED:
 		case FREENECT_DEPTH_10BIT_PACKED:
@@ -679,6 +711,7 @@ int freenect_start_depth(freenect_device *dev)
 	write_register(dev, 0x14, 0x1e);
 	write_register(dev, 0x06, 0x02); // start depth stream
 	write_register(dev, 0x17, 0x00); // disable depth hflip
+	dev->depth_mirrored = 0;
 
 	// IR projector: on, as Microsoft's runtime does after every depth start,
 	// unless freenect_set_ir_emitter(dev, 0) asked to keep it off.
@@ -780,7 +813,7 @@ int freenect_start_video(freenect_device *dev)
 	freenect_frame_mode frame_mode = freenect_get_current_video_mode(dev);
 	switch (dev->video_format) {
 		case FREENECT_VIDEO_RGB:
-			stream_init(ctx, &dev->video, freenect_find_video_mode(dev->video_resolution, FREENECT_VIDEO_BAYER).bytes, frame_mode.bytes);
+			stream_init(ctx, &dev->video, video_mode_for_device(dev, dev->video_resolution, FREENECT_VIDEO_BAYER).bytes, frame_mode.bytes);
 			break;
 		case FREENECT_VIDEO_BAYER:
 			stream_init(ctx, &dev->video, 0, frame_mode.bytes);
@@ -866,6 +899,8 @@ int freenect_stop_depth(freenect_device *dev)
 
 	freenect_destroy_registration(&(dev->registration));
 	stream_freebufs(ctx, &dev->depth);
+	free(dev->depth_full);
+	dev->depth_full = NULL;
 	return 0;
 }
 
@@ -926,9 +961,25 @@ freenect_frame_mode freenect_get_video_mode(int mode_num)
 	return retval;
 }
 
+// The frame mode as this device delivers it. The hi-res colour sensor mode
+// is 1280x1024 only on the Xbox 1414; the 1473 and Kinect for Windows send
+// 1280x960 (§5.8, §10A.5). The mode table keeps 1280x1024, so buffers sized
+// from freenect_find_video_mode() are large enough on every model.
+static freenect_frame_mode video_mode_for_device(freenect_device *dev, freenect_resolution res, freenect_video_format fmt)
+{
+	freenect_frame_mode mode = freenect_find_video_mode(res, fmt);
+	if (mode.is_valid && res == FREENECT_RESOLUTION_HIGH &&
+	    (fmt == FREENECT_VIDEO_RGB || fmt == FREENECT_VIDEO_BAYER) &&
+	    (dev->device_type == FN_KINECT_XBOX_1473 || dev->device_type == FN_KINECT_WINDOWS)) {
+		mode.height = 960;
+		mode.bytes = mode.width * mode.height * (fmt == FREENECT_VIDEO_RGB ? 3 : 1);
+	}
+	return mode;
+}
+
 freenect_frame_mode freenect_get_current_video_mode(freenect_device *dev)
 {
-	return freenect_find_video_mode(dev->video_resolution, dev->video_format);
+	return video_mode_for_device(dev, dev->video_resolution, dev->video_format);
 }
 
 freenect_frame_mode freenect_find_video_mode(freenect_resolution res, freenect_video_format fmt)
@@ -1092,5 +1143,7 @@ FN_INTERNAL int freenect_camera_teardown(freenect_device *dev)
 		}
 	}
 	freenect_destroy_registration(&(dev->registration));
+	free(dev->depth_full); // left by a start that failed
+	dev->depth_full = NULL;
 	return res;
 }

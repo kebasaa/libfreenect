@@ -73,12 +73,17 @@ struct freenect_device_attributes
 /// Enumeration of available resolutions.
 /// Not all available resolutions are actually supported for all video formats.
 /// Frame modes may not perfectly match resolutions.  For instance,
-/// FREENECT_RESOLUTION_MEDIUM is 640x488 for the IR camera.
+/// FREENECT_RESOLUTION_MEDIUM is 640x488 for the IR camera, and
+/// FREENECT_RESOLUTION_HIGH colour is 1280x960 on the Xbox 1473 and Kinect
+/// for Windows (freenect_get_current_video_mode() reports the device's size).
+/// The depth camera always captures 640x480; the LOW and VERY_LOW depth modes
+/// are taken from it in software, as Microsoft's runtime does.
 typedef enum {
-	FREENECT_RESOLUTION_LOW    = 0, /**< QVGA - 320x240 */
-	FREENECT_RESOLUTION_MEDIUM = 1, /**< VGA  - 640x480 */
-	FREENECT_RESOLUTION_HIGH   = 2, /**< SXGA - 1280x1024 */
-	FREENECT_RESOLUTION_DUMMY  = 2147483647, /**< Dummy value to force enum to be 32 bits wide */
+	FREENECT_RESOLUTION_LOW      = 0, /**< QVGA - 320x240 */
+	FREENECT_RESOLUTION_MEDIUM   = 1, /**< VGA  - 640x480 */
+	FREENECT_RESOLUTION_HIGH     = 2, /**< SXGA - 1280x1024 */
+	FREENECT_RESOLUTION_VERY_LOW = 3, /**< 80x60 (depth only) */
+	FREENECT_RESOLUTION_DUMMY    = 2147483647, /**< Dummy value to force enum to be 32 bits wide */
 } freenect_resolution;
 
 /// Enumeration of video frame information states.

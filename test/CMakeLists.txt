@@ -41,3 +41,8 @@ endif ()
 # frames are delivered, and the first video frames after a start are skipped.
 add_executable(test_stream test_stream.c ${CMAKE_SOURCE_DIR}/src/stream.c)
 add_test(NAME stream COMMAND test_stream)
+
+# 320x240 and 80x60 depth (src/depth_decimate.h): the same pixels as
+# Microsoft's runtime, mirrored and unmirrored.
+add_executable(test_decimate test_decimate.c)
+add_test(NAME decimate COMMAND test_decimate)

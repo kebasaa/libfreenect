@@ -313,6 +313,8 @@ struct _freenect_device {
 	freenect_video_cb video_cb;
 	freenect_chunk_cb depth_chunk_cb;
 	freenect_chunk_cb video_chunk_cb;
+	uint16_t *depth_full; // 640x480 work buffer for the 320x240 and 80x60 depth modes
+	int depth_mirrored;    // FREENECT_MIRROR_DEPTH is on (the camera mirrors depth)
 	freenect_video_format video_format;
 	freenect_depth_format depth_format;
 	freenect_resolution video_resolution;
