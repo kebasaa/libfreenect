@@ -79,6 +79,18 @@ Microsoft's own audio firmware (`UAC.BIN`) can also be used. With it, the microp
 
 This downloads the installer from download.microsoft.com, extracts only the firmware, verifies its SHA-256, and writes `UACFirmware.bin`, without running the installer. OUTPUT is a `.bin` file or a directory; `--user` writes to `$XDG_DATA_HOME/libfreenect` (`~/.local/share/libfreenect`). Put the file where libfreenect looks for firmware, for example `~/.local/share/libfreenect/`, or `/usr/local/share/libfreenect/` so that the Linux plug-in service finds it too. On Linux and macOS libfreenect prefers `audios.bin`; set `LIBFREENECT_AUDIO_FIRMWARE=uac` to use `UACFirmware.bin`. On Windows, `freenect-driver-install` fetches it for you. Microsoft's licence terms for the Kinect for Windows Runtime apply to this firmware.
 
+## Depth in millimetres
+
+`FREENECT_DEPTH_MM` and `FREENECT_DEPTH_REGISTERED` convert depth to millimetres with the formula of Microsoft's Kinect for Windows runtime, from each device's own calibration. Unlike the runtime, libfreenect doesn't round the device's reference distance to whole centimetres. By default every distance the sensor reports is kept; beyond 4 m depth gets noisier. To keep only a range, as the runtime does, call `freenect_set_depth_range()`:
+
+| Range | Keeps |
+|---|---|
+| `FREENECT_DEPTH_RANGE_FULL` (default) | every distance. `FREENECT_DEPTH_MM` saturates at `FREENECT_DEPTH_MM_MAX_VALUE` (10 m), as before |
+| `FREENECT_DEPTH_RANGE_SDK` | 800–4000 mm, the runtime's default |
+| `FREENECT_DEPTH_RANGE_NEAR` | 400–3000 mm, as in the runtime's near mode. With `FREENECT_DEPTH_RANGE_SDK` set, switching `FREENECT_NEAR_MODE` on (Kinect for Windows) selects it |
+
+Distances outside the range are delivered as 0. Earlier versions of libfreenect used a slightly different formula, with a 0.375-pixel offset, which gave shorter distances: with the reference sample calibration about 0.5 % at 1.2 m, 1.7 % at 4 m and 3 % at 7 m.
+
 ## Environment variables
 
 These change libfreenect's behaviour for every application:

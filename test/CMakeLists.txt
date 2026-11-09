@@ -46,3 +46,8 @@ add_test(NAME stream COMMAND test_stream)
 # Microsoft's runtime, mirrored and unmirrored.
 add_executable(test_decimate test_decimate.c)
 add_test(NAME decimate COMMAND test_decimate)
+
+# Raw depth -> mm (src/depth_lut.h) against Microsoft's runtime (§20.2), in
+# the three ranges.
+add_executable(test_depth_lut test_depth_lut.c)
+add_test(NAME depth_lut COMMAND test_depth_lut)

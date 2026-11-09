@@ -148,6 +148,12 @@ namespace Freenect {
 		{
 			return freenect_set_flag(m_dev, flag, value ? FREENECT_ON : FREENECT_OFF);
 		}
+		int setDepthRange(freenect_depth_range range) {
+			return freenect_set_depth_range(m_dev, range);
+		}
+		freenect_depth_range getDepthRange() {
+			return freenect_get_depth_range(m_dev);
+		}
 		const freenect_device *getDevice() {
 			return m_dev;
 		}

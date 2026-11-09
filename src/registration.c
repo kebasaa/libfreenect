@@ -27,6 +27,7 @@
 #include "libfreenect.h"
 #include "freenect_internal.h"
 #include "registration.h"
+#include "depth_lut.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -311,30 +312,37 @@ static void freenect_init_registration_table(int32_t (*registration_table)[2], f
 	free(regtable_dy);
 }
 
-// These are just constants.
-static double parameter_coefficient = 4;
-static double shift_scale = 10;
-static double pixel_size_factor = 1;
-
-/// convert raw shift value to metric depth (in mm)
-static uint16_t freenect_raw_to_mm(uint16_t raw, freenect_registration* reg)
-{
+/// Compute registration tables. raw_to_mm_shift is Microsoft's depth table
+/// (§20.2), limited to the requested range (src/depth_lut.h).
+static void complete_tables(freenect_registration* reg, freenect_depth_range range) {
 	freenect_zero_plane_info* zpi = &(reg->zero_plane_info);
-	double fixed_ref_x = ((raw - (parameter_coefficient * reg->const_shift / pixel_size_factor)) / parameter_coefficient) - S2D_CONST_OFFSET;
-	double metric = fixed_ref_x * zpi->reference_pixel_size * pixel_size_factor;
-	return shift_scale * ((metric * zpi->reference_distance / (zpi->dcmos_emitter_dist - metric)) + zpi->reference_distance);
-}
-
-/// Compute registration tables.
-static void complete_tables(freenect_registration* reg) {
-	uint16_t i;
-	for (i = 0; i < DEPTH_MAX_RAW_VALUE; i++)
-		reg->raw_to_mm_shift[i] = freenect_raw_to_mm( i, reg);
-	reg->raw_to_mm_shift[DEPTH_NO_RAW_VALUE] = DEPTH_NO_MM_VALUE;
+	fn_build_depth_lut(reg->raw_to_mm_shift, zpi->dcmos_emitter_dist, zpi->reference_distance,
+	                   zpi->reference_pixel_size, (uint16_t)reg->const_shift, range);
 
 	freenect_init_depth_to_rgb( reg->depth_to_rgb_shift, &(reg->zero_plane_info) );
 
 	freenect_init_registration_table( reg->registration_table, &(reg->reg_info) );
+}
+
+int freenect_set_depth_range(freenect_device* dev, freenect_depth_range range)
+{
+	freenect_registration* reg = &(dev->registration);
+	if (range != FREENECT_DEPTH_RANGE_SDK && range != FREENECT_DEPTH_RANGE_NEAR && range != FREENECT_DEPTH_RANGE_FULL)
+		return -1;
+	dev->depth_range = range;
+	// Rebuild the table at once if depth is streaming; otherwise the next
+	// freenect_start_depth() builds it with this range.
+	if (reg->raw_to_mm_shift) {
+		freenect_zero_plane_info* zpi = &(reg->zero_plane_info);
+		fn_build_depth_lut(reg->raw_to_mm_shift, zpi->dcmos_emitter_dist, zpi->reference_distance,
+		                   zpi->reference_pixel_size, (uint16_t)reg->const_shift, range);
+	}
+	return 0;
+}
+
+freenect_depth_range freenect_get_depth_range(freenect_device* dev)
+{
+	return dev->depth_range;
 }
 
 /// camera -> world coordinate helper function
@@ -435,7 +443,7 @@ FN_INTERNAL int freenect_init_registration(freenect_device* dev)
 	reg->registration_table = (int32_t (*)[2])malloc( sizeof( int32_t) * DEPTH_X_RES * DEPTH_Y_RES * 2 );
 
 	// Fill tables.
-	complete_tables(reg);
+	complete_tables(reg, dev->depth_range);
 
 	return 0;
 }
@@ -450,7 +458,7 @@ freenect_registration freenect_copy_registration(freenect_device* dev)
 	retval.raw_to_mm_shift    = (uint16_t*)malloc( sizeof(uint16_t) * DEPTH_MAX_RAW_VALUE );
 	retval.depth_to_rgb_shift = (int32_t*)malloc( sizeof( int32_t) * DEPTH_MAX_METRIC_VALUE );
 	retval.registration_table = (int32_t (*)[2])malloc( sizeof( int32_t) * DEPTH_X_RES * DEPTH_Y_RES * 2 );
-	complete_tables(&retval);
+	complete_tables(&retval, dev->depth_range);
 	return retval;
 }
 

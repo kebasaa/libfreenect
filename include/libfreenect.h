@@ -740,6 +740,31 @@ FREENECTAPI int freenect_set_depth_mode(freenect_device* dev, const freenect_fra
  */
 FREENECTAPI int freenect_set_flag(freenect_device *dev, freenect_flag flag, freenect_flag_value value);
 
+/// Distances kept by FREENECT_DEPTH_MM and FREENECT_DEPTH_REGISTERED. A
+/// distance outside the range is delivered as FREENECT_DEPTH_MM_NO_VALUE (0).
+typedef enum {
+	FREENECT_DEPTH_RANGE_FULL = 0, /**< every distance the sensor reports (the default). FREENECT_DEPTH_MM saturates at FREENECT_DEPTH_MM_MAX_VALUE, as before; beyond 4 m depth gets noisier */
+	FREENECT_DEPTH_RANGE_SDK  = 1, /**< 800-4000 mm, as Microsoft's SDK delivers by default */
+	FREENECT_DEPTH_RANGE_NEAR = 2, /**< 400-3000 mm, as the SDK in near mode */
+} freenect_depth_range;
+
+/**
+ * Sets the range of distances kept in millimetre depth. It takes effect
+ * at once, also while depth is streaming. With FREENECT_DEPTH_RANGE_SDK,
+ * switching FREENECT_NEAR_MODE on selects FREENECT_DEPTH_RANGE_NEAR, and
+ * off again FREENECT_DEPTH_RANGE_SDK, as in the SDK.
+ *
+ * @param range The range to keep. The default is FREENECT_DEPTH_RANGE_FULL.
+ *
+ * @return 0 on success, < 0 if error
+ */
+FREENECTAPI int freenect_set_depth_range(freenect_device *dev, freenect_depth_range range);
+
+/**
+ * @return The range of distances kept in millimetre depth.
+ */
+FREENECTAPI freenect_depth_range freenect_get_depth_range(freenect_device *dev);
+
 /**
  * Switches the IR projector (laser) on or off.
  *
