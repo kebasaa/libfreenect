@@ -101,6 +101,7 @@ int fn_detect_vm(char *name, int size);
 typedef struct {
 	fnusb_dev *parent; //so we can go up from the libusb userdata
 	struct libusb_transfer **xfers;
+	uint8_t *xfer_done; // per transfer: 1 once it has finished for good
 	uint8_t *buffer;
 	fnusb_iso_cb cb;
 	int num_xfers;

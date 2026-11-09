@@ -1042,6 +1042,25 @@ static void iso_diag_count(freenect_context *ctx, fnusb_isoc_stream *strm, int p
 		           "libfreenect's README.\n");
 }
 
+// A transfer has finished for good (cancelled, failed, or not resubmitted).
+// Counted once per transfer, so fnusb_stop_iso() knows which ones it still
+// has to wait for.
+static void iso_xfer_done(fnusb_isoc_stream *strm, struct libusb_transfer *xfer)
+{
+	int i;
+	if (strm->xfers && strm->xfer_done) {
+		for (i = 0; i < strm->num_xfers; i++) {
+			if (strm->xfers[i] == xfer) {
+				if (strm->xfer_done[i])
+					return;
+				strm->xfer_done[i] = 1;
+				break;
+			}
+		}
+	}
+	strm->dead_xfers++;
+}
+
 static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 {
 	int i;
@@ -1049,7 +1068,7 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 	freenect_context *ctx = strm->parent->parent->parent;
 
 	if (strm->dead) {
-		strm->dead_xfers++;
+		iso_xfer_done(strm, xfer);
 		FN_SPEW("EP %02x transfer complete, %d left\n", xfer->endpoint, strm->num_xfers - strm->dead_xfers);
 		return;
 	}
@@ -1082,7 +1101,7 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 			res = libusb_submit_transfer(xfer);
 			if (res != 0) {
 				FN_ERROR("iso_callback(): failed to resubmit transfer after successful completion: %s\n", libusb_error_name(res));
-				strm->dead_xfers++;
+				iso_xfer_done(strm, xfer);
 				if (res == LIBUSB_ERROR_NO_DEVICE) {
 					strm->parent->device_dead = 1;
 				}
@@ -1097,7 +1116,7 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 			if(!strm->parent->device_dead) {
 				FN_ERROR("USB device disappeared, cancelling stream %02x :(\n", xfer->endpoint);
 			}
-			strm->dead_xfers++;
+			iso_xfer_done(strm, xfer);
 			strm->parent->device_dead = 1;
 			break;
 		}
@@ -1116,7 +1135,7 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 				}
 				strm->parent->device_dead = 1;
 			}
-			strm->dead_xfers++;
+			iso_xfer_done(strm, xfer);
 			break;
 		}
 		default:
@@ -1137,7 +1156,7 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 			res = libusb_submit_transfer(xfer);
 			if (res != 0) {
 				FN_ERROR("Isochronous transfer resubmission failed after unknown error: %s\n", libusb_error_name(res));
-				strm->dead_xfers++;
+				iso_xfer_done(strm, xfer);
 				if (res == LIBUSB_ERROR_NO_DEVICE) {
 					strm->parent->device_dead = 1;
 				}
@@ -1171,18 +1190,21 @@ FN_INTERNAL int fnusb_start_iso(fnusb_dev *dev, fnusb_isoc_stream *strm, fnusb_i
 	strm->len = len;
 	strm->buffer = (uint8_t*)malloc((size_t)xfers * pkts * len);
 	strm->xfers = (struct libusb_transfer**)calloc(xfers, sizeof(struct libusb_transfer*));
+	strm->xfer_done = (uint8_t*)calloc(xfers, 1);
 	strm->dead = 0;
 	strm->dead_xfers = 0;
 	strm->endpoint = endpoint;
 	memset(&strm->diag, 0, sizeof(strm->diag));
 	strm->error_logged = 0;
-	if (!strm->buffer || !strm->xfers)
+	if (!strm->buffer || !strm->xfers || !strm->xfer_done)
 	{
 		FN_ERROR("Failed to allocate isochronous buffers for endpoint %02x\n", endpoint);
 		free(strm->buffer);
 		free(strm->xfers);
+		free(strm->xfer_done);
 		strm->buffer = NULL;
 		strm->xfers = NULL;
+		strm->xfer_done = NULL;
 		return LIBUSB_ERROR_NO_MEM;
 	}
 
@@ -1199,7 +1221,7 @@ FN_INTERNAL int fnusb_start_iso(fnusb_dev *dev, fnusb_isoc_stream *strm, fnusb_i
 		if (strm->xfers[i] == NULL)
 		{
 			FN_WARNING("Failed to allocate transfer\n");
-			strm->dead_xfers++;
+			strm->xfer_done[i] = 1; strm->dead_xfers++;
 			if (first_error == LIBUSB_SUCCESS)
 				first_error = LIBUSB_ERROR_NO_MEM;
 		}
@@ -1212,7 +1234,7 @@ FN_INTERNAL int fnusb_start_iso(fnusb_dev *dev, fnusb_isoc_stream *strm, fnusb_i
 			if (ret < 0)
 			{
 				FN_WARNING("Failed to submit isochronous transfer %d: %s\n", i, libusb_error_name(ret));
-				strm->dead_xfers++;
+				strm->xfer_done[i] = 1; strm->dead_xfers++;
 				if (first_error == LIBUSB_SUCCESS)
 					first_error = ret;
 			}
@@ -1251,8 +1273,10 @@ FN_INTERNAL int fnusb_start_iso(fnusb_dev *dev, fnusb_isoc_stream *strm, fnusb_i
 			libusb_free_transfer(strm->xfers[i]);
 		free(strm->buffer);
 		free(strm->xfers);
+		free(strm->xfer_done);
 		strm->buffer = NULL;
 		strm->xfers = NULL;
+		strm->xfer_done = NULL;
 		strm->dead = 1;
 		return first_error;
 	}
@@ -1274,19 +1298,27 @@ FN_INTERNAL int fnusb_stop_iso(fnusb_dev *dev, fnusb_isoc_stream *strm)
 	if (!strm->xfers)
 		return 0; // never started, or fnusb_start_iso() already cleaned up
 
-	for (i=0; i<strm->num_xfers; i++)
-		if (strm->xfers[i])
-			libusb_cancel_transfer(strm->xfers[i]);
-	FN_FLOOD("fnusb_stop_iso() cancelled all transfers\n");
-
 	// Wait for the cancellations to complete, but not forever, so this function
 	// itself cannot hang. Note the limit: if the OS never completes a
 	// transfer (seen with WinUSB on the stalled audio stream), the process
 	// still cannot exit until it does, and Windows shutdown can hang. That
 	// case is prevented in freenect_start_audio(), not here.
+	//
+	// Cancel again every 200 ms whatever hasn't finished. libusb's WinUSB
+	// backend (1.0.30) puts its own callback on isochronous transfers that
+	// resubmits any transfer that did not complete, to restart the stream
+	// without ContinueStream; a cancelled transfer counts as not completed, so
+	// it is quietly resubmitted and our callback never sees it. The
+	// resubmitted transfer has our callback again, so a second cancel ends it.
+	// A transfer whose cancellation is still pending only answers
+	// LIBUSB_ERROR_NOT_FOUND, which does no harm.
 	int waited_ms = 0;
 	while (strm->dead_xfers < strm->num_xfers && waited_ms < 3000) {
 		struct timeval tv = { 0, 100000 };
+		if (waited_ms % 200 == 0)
+			for (i = 0; i < strm->num_xfers; i++)
+				if (strm->xfers[i] && !strm->xfer_done[i])
+					libusb_cancel_transfer(strm->xfers[i]);
 		FN_FLOOD("fnusb_stop_iso() dead = %d\tnum = %d\n", strm->dead_xfers, strm->num_xfers);
 		libusb_handle_events_timeout_completed(ctx->usb.ctx, &tv, NULL);
 		waited_ms += 100;
@@ -1298,8 +1330,10 @@ FN_INTERNAL int fnusb_stop_iso(fnusb_dev *dev, fnusb_isoc_stream *strm)
 		           strm->num_xfers - strm->dead_xfers, strm->num_xfers);
 		strm->xfers = NULL;
 		strm->buffer = NULL;
+		strm->xfer_done = NULL;
 		return 0;
 	}
+	FN_DEBUG("fnusb_stop_iso(): EP %02x stopped after %d ms\n", strm->endpoint, waited_ms);
 
 	for (i=0; i<strm->num_xfers; i++)
 		libusb_free_transfer(strm->xfers[i]);
@@ -1307,6 +1341,10 @@ FN_INTERNAL int fnusb_stop_iso(fnusb_dev *dev, fnusb_isoc_stream *strm)
 
 	free(strm->buffer);
 	free(strm->xfers);
+	free(strm->xfer_done);
+	strm->buffer = NULL;
+	strm->xfers = NULL;
+	strm->xfer_done = NULL;
 
 	FN_FLOOD("fnusb_stop_iso() freed buffers and stream\n");
 	FN_FLOOD("fnusb_stop_iso() done\n");
