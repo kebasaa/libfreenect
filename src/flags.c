@@ -68,7 +68,7 @@ int freenect_set_flag(freenect_device *dev, freenect_flag flag, freenect_flag_va
 			usleep(100000);
 			ret = write_register(dev, 0x02EF, 0x0000);
 			// As the SDK does in near mode: keep 400-3000 mm (§20.2.2)
-			if (ret >= 0 && dev->depth_range == FREENECT_DEPTH_RANGE_SDK)
+			if (ret >= 0 && dev->depth_range == FREENECT_DEPTH_RANGE_DEFAULT)
 				freenect_set_depth_range(dev, FREENECT_DEPTH_RANGE_NEAR);
 			return ret;
 		}
@@ -80,7 +80,7 @@ int freenect_set_flag(freenect_device *dev, freenect_flag flag, freenect_flag_va
 			usleep(100000);
 			ret = write_register(dev, 0x02EF, 0x0190);
 			if (ret >= 0 && dev->depth_range == FREENECT_DEPTH_RANGE_NEAR)
-				freenect_set_depth_range(dev, FREENECT_DEPTH_RANGE_SDK);
+				freenect_set_depth_range(dev, FREENECT_DEPTH_RANGE_DEFAULT);
 			return ret;
 		}
 	}

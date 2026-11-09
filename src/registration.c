@@ -327,7 +327,7 @@ static void complete_tables(freenect_registration* reg, freenect_depth_range ran
 int freenect_set_depth_range(freenect_device* dev, freenect_depth_range range)
 {
 	freenect_registration* reg = &(dev->registration);
-	if (range != FREENECT_DEPTH_RANGE_SDK && range != FREENECT_DEPTH_RANGE_NEAR && range != FREENECT_DEPTH_RANGE_FULL)
+	if (range != FREENECT_DEPTH_RANGE_DEFAULT && range != FREENECT_DEPTH_RANGE_NEAR && range != FREENECT_DEPTH_RANGE_FULL)
 		return -1;
 	dev->depth_range = range;
 	// Rebuild the table at once if depth is streaming; otherwise the next

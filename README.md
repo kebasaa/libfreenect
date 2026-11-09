@@ -81,15 +81,15 @@ This downloads the installer from download.microsoft.com, extracts only the firm
 
 ## Depth in millimetres
 
-`FREENECT_DEPTH_MM` and `FREENECT_DEPTH_REGISTERED` convert depth to millimetres with the formula of Microsoft's Kinect for Windows runtime, from each device's own calibration. Unlike the runtime, libfreenect doesn't round the device's reference distance to whole centimetres. By default every distance the sensor reports is kept; beyond 4 m depth gets noisier. To keep only a range, as the runtime does, call `freenect_set_depth_range()`:
+`FREENECT_DEPTH_MM` and `FREENECT_DEPTH_REGISTERED` convert depth to millimetres with the formula of Microsoft's Kinect for Windows runtime, from each device's own calibration. Unlike the runtime, libfreenect doesn't round the device's reference distance to whole centimetres. Like the runtime, they keep 800–4000 mm by default. To change that, call `freenect_set_depth_range()`:
 
 | Range | Keeps |
 |---|---|
-| `FREENECT_DEPTH_RANGE_FULL` (default) | every distance. `FREENECT_DEPTH_MM` saturates at `FREENECT_DEPTH_MM_MAX_VALUE` (10 m), as before |
-| `FREENECT_DEPTH_RANGE_SDK` | 800–4000 mm, the runtime's default |
-| `FREENECT_DEPTH_RANGE_NEAR` | 400–3000 mm, as in the runtime's near mode. With `FREENECT_DEPTH_RANGE_SDK` set, switching `FREENECT_NEAR_MODE` on (Kinect for Windows) selects it |
+| `FREENECT_DEPTH_RANGE_DEFAULT` | 800–4000 mm, as the runtime. The default |
+| `FREENECT_DEPTH_RANGE_NEAR` | 400–3000 mm, as in the runtime's near mode. Switching `FREENECT_NEAR_MODE` on (Kinect for Windows) selects it, and switching it off returns to the default |
+| `FREENECT_DEPTH_RANGE_FULL` | unlimited: every distance the sensor reports, also beyond 4 m, where depth gets noisier. `FREENECT_DEPTH_MM` saturates at `FREENECT_DEPTH_MM_MAX_VALUE` (10 m) |
 
-Distances outside the range are delivered as 0. Earlier versions of libfreenect used a slightly different formula, with a 0.375-pixel offset, which gave shorter distances: with the reference sample calibration about 0.5 % at 1.2 m, 1.7 % at 4 m and 3 % at 7 m.
+Distances outside the range are delivered as 0. Earlier versions of libfreenect kept every distance; to get that again, use `FREENECT_DEPTH_RANGE_FULL`. Earlier versions of libfreenect used a slightly different formula, with a 0.375-pixel offset, which gave shorter distances: with the reference sample calibration about 0.5 % at 1.2 m, 1.7 % at 4 m and 3 % at 7 m.
 
 ## Colour camera settings (Kinect for Windows)
 

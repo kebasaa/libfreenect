@@ -79,14 +79,14 @@ int main(void)
 	printf("Raw depth -> mm (src/depth_lut.h)\n");
 
 	fn_build_depth_lut(lut, 7.5f, 120.0f, 0.1042f, 200, FREENECT_DEPTH_RANGE_FULL);
-	CHECK(check_golden(1, 65535), "full range (the default): every distance kept");
+	CHECK(check_golden(1, 65535), "full range (unlimited): every distance kept");
 	CHECK(lut[1050] == 9113 && lut[1066] == 15770 && lut[1080] == 43689 && lut[41] == 330,
 	      "  for example 330 mm, 9113 mm, 15770 mm and 43689 mm");
 	CHECK(sum() == 1831331, "  and the whole table matches the SDK's");
 	CHECK(lut[1083] == 0 && lut[1087] == 0, "  above 65535 mm (where the SDK's value wraps): no value");
 
-	fn_build_depth_lut(lut, 7.5f, 120.0f, 0.1042f, 200, FREENECT_DEPTH_RANGE_SDK);
-	CHECK(check_golden(800, 4000), "SDK range: the SDK's values, 800-4000 mm kept");
+	fn_build_depth_lut(lut, 7.5f, 120.0f, 0.1042f, 200, FREENECT_DEPTH_RANGE_DEFAULT);
+	CHECK(check_golden(800, 4000), "default range: the SDK's values, 800-4000 mm kept");
 	CHECK(sum() == 555365, "  and the whole table equals the SDK's packed table");
 	CHECK(lut[656] == 0 && lut[1025] == 0, "  799 mm and 5491 mm are dropped");
 

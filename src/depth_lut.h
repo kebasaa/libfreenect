@@ -41,7 +41,8 @@
  *   table[k] = trunc(z) if 0 < z <= 65535, else 0 ("no value");  table[0] = 0
  *
  * Then the range: values below lo or above hi become 0; lo and hi
- * themselves are kept. FREENECT_DEPTH_RANGE_FULL, the default, keeps them all.
+ * themselves are kept. The default range, FREENECT_DEPTH_RANGE_DEFAULT, is
+ * 800-4000 mm; FREENECT_DEPTH_RANGE_FULL keeps them all.
  *
  * Deliberate differences from the SDK:
  * - The SDK truncates Zref to whole centimetres. Here it's used as the
@@ -57,18 +58,18 @@
 static inline void fn_depth_range_limits(freenect_depth_range range, int *lo, int *hi)
 {
 	switch (range) {
-		case FREENECT_DEPTH_RANGE_SDK:
-			*lo = 800;
-			*hi = 4000;
-			break;
 		case FREENECT_DEPTH_RANGE_NEAR:
 			*lo = 400;
 			*hi = 3000;
 			break;
 		case FREENECT_DEPTH_RANGE_FULL:
-		default:
 			*lo = 1;
 			*hi = 65535;
+			break;
+		case FREENECT_DEPTH_RANGE_DEFAULT:
+		default:
+			*lo = 800;
+			*hi = 4000;
 			break;
 	}
 }

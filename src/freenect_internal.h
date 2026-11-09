@@ -318,7 +318,7 @@ struct _freenect_device {
 	freenect_video_cb video_cb;
 	freenect_chunk_cb depth_chunk_cb;
 	freenect_chunk_cb video_chunk_cb;
-	freenect_depth_range depth_range; // distances kept in millimetre depth (default: FREENECT_DEPTH_RANGE_FULL)
+	freenect_depth_range depth_range; // distances kept in millimetre depth (default: FREENECT_DEPTH_RANGE_DEFAULT, 800-4000 mm)
 	double color_value[FREENECT_COLOR_SETTING_COUNT]; // Kinect for Windows colour settings (color.c)
 	uint32_t color_set_mask; // bit per setting the application set
 	uint32_t color_pending;  // bit per setting still to be sent to the camera

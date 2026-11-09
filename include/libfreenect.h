@@ -743,18 +743,18 @@ FREENECTAPI int freenect_set_flag(freenect_device *dev, freenect_flag flag, free
 /// Distances kept by FREENECT_DEPTH_MM and FREENECT_DEPTH_REGISTERED. A
 /// distance outside the range is delivered as FREENECT_DEPTH_MM_NO_VALUE (0).
 typedef enum {
-	FREENECT_DEPTH_RANGE_FULL = 0, /**< every distance the sensor reports (the default). FREENECT_DEPTH_MM saturates at FREENECT_DEPTH_MM_MAX_VALUE, as before; beyond 4 m depth gets noisier */
-	FREENECT_DEPTH_RANGE_SDK  = 1, /**< 800-4000 mm, as Microsoft's SDK delivers by default */
-	FREENECT_DEPTH_RANGE_NEAR = 2, /**< 400-3000 mm, as the SDK in near mode */
+	FREENECT_DEPTH_RANGE_DEFAULT = 0, /**< 800-4000 mm, the default, as Microsoft's SDK delivers by default */
+	FREENECT_DEPTH_RANGE_NEAR    = 1, /**< 400-3000 mm, as the SDK in near mode */
+	FREENECT_DEPTH_RANGE_FULL    = 2, /**< unlimited: every distance the sensor reports, also far beyond 4 m, where depth gets noisier. FREENECT_DEPTH_MM saturates at FREENECT_DEPTH_MM_MAX_VALUE */
 } freenect_depth_range;
 
 /**
  * Sets the range of distances kept in millimetre depth. It takes effect
- * at once, also while depth is streaming. With FREENECT_DEPTH_RANGE_SDK,
+ * at once, also while depth is streaming. With FREENECT_DEPTH_RANGE_DEFAULT,
  * switching FREENECT_NEAR_MODE on selects FREENECT_DEPTH_RANGE_NEAR, and
- * off again FREENECT_DEPTH_RANGE_SDK, as in the SDK.
+ * off again FREENECT_DEPTH_RANGE_DEFAULT, as in the SDK.
  *
- * @param range The range to keep. The default is FREENECT_DEPTH_RANGE_FULL.
+ * @param range The range to keep. The default is FREENECT_DEPTH_RANGE_DEFAULT.
  *
  * @return 0 on success, < 0 if error
  */
