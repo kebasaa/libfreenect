@@ -61,3 +61,8 @@ add_test(NAME color_settings COMMAND test_color_settings)
 # order of writes, read-back, preconditions, when they are sent.
 add_executable(test_color_device test_color_device.c ${CMAKE_SOURCE_DIR}/src/color.c)
 add_test(NAME color_device COMMAND test_color_device)
+
+# Near mode and IR brightness (src/flags.c) share camera register 0x15:
+# against a simulated camera on the GM command channel.
+add_executable(test_near_ir test_near_ir.c ${CMAKE_SOURCE_DIR}/src/flags.c)
+add_test(NAME near_ir COMMAND test_near_ir)

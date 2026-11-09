@@ -322,6 +322,8 @@ struct _freenect_device {
 	double color_value[FREENECT_COLOR_SETTING_COUNT]; // Kinect for Windows colour settings (color.c)
 	uint32_t color_set_mask; // bit per setting the application set
 	uint32_t color_pending;  // bit per setting still to be sent to the camera
+	uint16_t ir_brightness; // IR brightness the application set (register 0x15), 0 if none
+	int near_mode;          // FREENECT_NEAR_MODE is on (it owns register 0x15 then)
 	uint16_t *depth_full; // 640x480 work buffer for the 320x240 and 80x60 depth modes
 	int depth_mirrored;    // FREENECT_MIRROR_DEPTH is on (the camera mirrors depth)
 	freenect_video_format video_format;
@@ -390,6 +392,9 @@ struct _freenect_device {
 // The first UAC firmware build with the LED command 0x10 (v1.8 = 709; the
 // SDK v1.0 beta 2 image, build 390, lacks it).
 #define FN_UAC_LED_MIN_BUILD 709
+// Register 0x15 (IR brightness) as Microsoft's driver sets it when near mode
+// is switched off (§10C.3)
+#define FN_IR_BRIGHTNESS_DEFAULT 30
 #define FN_AUDIO_RECOVER_MAX 3
 
 // Build number of the running UAC audio firmware (cmd 0x09), or < 0.

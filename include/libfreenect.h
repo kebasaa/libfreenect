@@ -850,7 +850,8 @@ FREENECTAPI int freenect_get_exposure(freenect_device *dev, int *time_us);
 FREENECTAPI int freenect_set_exposure(freenect_device *dev, int time_us);
 
 /**
- * Returns the brightness of the IR sensor.
+ * Returns the brightness of the IR sensor. While FREENECT_NEAR_MODE is on,
+ * returns the brightness that switching near mode off restores.
  *
  * @param dev Device to get IR brightness
  *
@@ -861,9 +862,11 @@ FREENECTAPI int freenect_get_ir_brightness(freenect_device *dev);
 /**
  * Sets the brightness of the IR sensor.
  * Note that this does not change the intensity of the IR projector.
+ * Near mode (Kinect for Windows) uses the same camera register: while it is
+ * on, the brightness is kept and applied when near mode is switched off.
  *
  * @param dev Device to set IR brightness
- * @param brighness Brightness value in range 1 - 50
+ * @param brightness Brightness value in range 1 - 50
  *
  * @return 0 on success, < 0 if error
  */

@@ -60,11 +60,15 @@ int freenect_set_flag(freenect_device *dev, freenect_flag flag, freenect_flag_va
 			return -1;
 		}
 
+		// Register 0x15 is shared with freenect_set_ir_brightness(): near
+		// mode sets it to 7 (§10C.3). Switching near mode off writes back the
+		// brightness the application asked for, or the camera's 30.
 		if (value == FREENECT_ON)
 		{
 			int ret = write_register(dev, 0x0015, 0x0007);
 			if (ret < 0)
 				return ret;
+			dev->near_mode = 1;
 			usleep(100000);
 			ret = write_register(dev, 0x02EF, 0x0000);
 			// As the SDK does in near mode: keep 400-3000 mm (§20.2.2)
@@ -74,9 +78,11 @@ int freenect_set_flag(freenect_device *dev, freenect_flag flag, freenect_flag_va
 		}
 		else
 		{
-			int ret = write_register(dev, 0x0015, 0x001E);
+			uint16_t ir = dev->ir_brightness ? dev->ir_brightness : FN_IR_BRIGHTNESS_DEFAULT;
+			int ret = write_register(dev, 0x0015, ir);
 			if (ret < 0)
 				return ret;
+			dev->near_mode = 0;
 			usleep(100000);
 			ret = write_register(dev, 0x02EF, 0x0190);
 			if (ret >= 0 && dev->depth_range == FREENECT_DEPTH_RANGE_NEAR)
@@ -164,6 +170,11 @@ int freenect_get_ir_brightness(freenect_device *dev)
 {
 	freenect_context *ctx = dev->parent;
 
+	// In near mode register 0x15 holds near mode's 7; report the brightness
+	// that switching near mode off brings back.
+	if (dev->near_mode)
+		return dev->ir_brightness ? dev->ir_brightness : FN_IR_BRIGHTNESS_DEFAULT;
+
 	const uint16_t brightness = read_register(dev, 0x15);
 	if (brightness == UINT16_MAX)
 	{
@@ -185,6 +196,15 @@ int freenect_set_ir_brightness(freenect_device *dev, uint16_t brightness)
 	if (brightness > 50)
 	{
 		brightness = 50;
+	}
+
+	dev->ir_brightness = brightness;
+	// Register 0x15 belongs to near mode while it's on; the brightness is
+	// written when near mode is switched off.
+	if (dev->near_mode)
+	{
+		FN_INFO("IR brightness %u kept; it applies when near mode is switched off\n", brightness);
+		return 0;
 	}
 
 	const int ret = write_register(dev, 0x15, brightness);
