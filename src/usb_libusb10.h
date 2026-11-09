@@ -111,6 +111,7 @@ typedef struct {
 	int dead_xfers;
 	unsigned char endpoint;
 	int error_logged; // a failed transfer was logged; reset by a completed one
+	int resubmit_logged; // a failed resubmission was logged (once per stream start)
 	fn_iso_diag diag;
 } fnusb_isoc_stream;
 

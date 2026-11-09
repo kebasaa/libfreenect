@@ -1112,7 +1112,14 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 			int res;
 			res = libusb_submit_transfer(xfer);
 			if (res != 0) {
-				FN_ERROR("iso_callback(): failed to resubmit transfer after successful completion: %s\n", libusb_error_name(res));
+				if (!strm->resubmit_logged) {
+					strm->resubmit_logged = 1;
+					FN_ERROR("iso_callback(): failed to resubmit transfer on EP %02x after successful completion: %s\n",
+					         xfer->endpoint, libusb_error_name(res));
+				} else {
+					FN_DEBUG("iso_callback(): failed to resubmit transfer on EP %02x: %s\n",
+					         xfer->endpoint, libusb_error_name(res));
+				}
 				iso_xfer_done(strm, xfer);
 				if (res == LIBUSB_ERROR_NO_DEVICE) {
 					strm->parent->device_dead = 1;
@@ -1167,7 +1174,14 @@ static void LIBUSB_CALL iso_callback(struct libusb_transfer *xfer)
 			int res;
 			res = libusb_submit_transfer(xfer);
 			if (res != 0) {
-				FN_ERROR("Isochronous transfer resubmission failed after unknown error: %s\n", libusb_error_name(res));
+				if (!strm->resubmit_logged) {
+					strm->resubmit_logged = 1;
+					FN_ERROR("Isochronous transfer resubmission failed after an error on EP %02x: %s\n",
+					         xfer->endpoint, libusb_error_name(res));
+				} else {
+					FN_DEBUG("Isochronous transfer resubmission failed after an error on EP %02x: %s\n",
+					         xfer->endpoint, libusb_error_name(res));
+				}
 				iso_xfer_done(strm, xfer);
 				if (res == LIBUSB_ERROR_NO_DEVICE) {
 					strm->parent->device_dead = 1;
@@ -1208,6 +1222,7 @@ FN_INTERNAL int fnusb_start_iso(fnusb_dev *dev, fnusb_isoc_stream *strm, fnusb_i
 	strm->endpoint = endpoint;
 	memset(&strm->diag, 0, sizeof(strm->diag));
 	strm->error_logged = 0;
+	strm->resubmit_logged = 0;
 	if (!strm->buffer || !strm->xfers || !strm->xfer_done)
 	{
 		FN_ERROR("Failed to allocate isochronous buffers for endpoint %02x\n", endpoint);
@@ -1324,8 +1339,11 @@ FN_INTERNAL int fnusb_stop_iso(fnusb_dev *dev, fnusb_isoc_stream *strm)
 	// resubmitted transfer has our callback again, so a second cancel ends it.
 	// A transfer whose cancellation is still pending only answers
 	// LIBUSB_ERROR_NOT_FOUND, which does no harm.
+	// An unplugged Kinect's transfers that libusb's WinUSB backend lost while
+	// resubmitting never come back, so don't wait as long for those.
 	int waited_ms = 0;
-	while (strm->dead_xfers < strm->num_xfers && waited_ms < 3000) {
+	int wait_max_ms = dev->device_dead ? 1000 : 3000;
+	while (strm->dead_xfers < strm->num_xfers && waited_ms < wait_max_ms) {
 		struct timeval tv = { 0, 100000 };
 		if (waited_ms % 200 == 0)
 			for (i = 0; i < strm->num_xfers; i++)
@@ -1337,9 +1355,14 @@ FN_INTERNAL int fnusb_stop_iso(fnusb_dev *dev, fnusb_isoc_stream *strm)
 	}
 	if (strm->dead_xfers < strm->num_xfers) {
 		// libusb may still own these transfers and write into the buffer, so
-		// leak them rather than free memory that is still in use.
-		FN_WARNING("fnusb_stop_iso(): %d of %d transfers on this stream did not finish cancelling; leaking them\n",
-		           strm->num_xfers - strm->dead_xfers, strm->num_xfers);
+		// leak them rather than free memory that is still in use. Expected for
+		// a Kinect that was unplugged; a warning otherwise.
+		if (dev->device_dead)
+			FN_INFO("fnusb_stop_iso(): %d of %d transfers of the unplugged Kinect's EP %02x never came back; leaking them\n",
+			        strm->num_xfers - strm->dead_xfers, strm->num_xfers, strm->endpoint);
+		else
+			FN_WARNING("fnusb_stop_iso(): %d of %d transfers on this stream did not finish cancelling; leaking them\n",
+			           strm->num_xfers - strm->dead_xfers, strm->num_xfers);
 		strm->xfers = NULL;
 		strm->buffer = NULL;
 		strm->xfer_done = NULL;
