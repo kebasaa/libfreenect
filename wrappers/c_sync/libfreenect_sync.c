@@ -284,6 +284,7 @@ static sync_kinect_t *alloc_kinect(int index)
 	return kinect;
 }
 
+// is_depth: 1 sets up the depth stream, 0 the video stream, -1 neither.
 static int setup_kinect(int index, int res, int fmt, int is_depth)
 {
 	pending_runloop_tasks_inc();
@@ -315,6 +316,13 @@ static int setup_kinect(int index, int res, int fmt, int is_depth)
 		return -1;
 	}
 	freenect_set_user(kinects[index]->dev, kinects[index]);
+	if (is_depth < 0) {
+		// Motor, LED and registration calls: open the device but start no
+		// stream (a depth stream would switch the IR projector on).
+		pthread_mutex_unlock(&runloop_lock);
+		pending_runloop_tasks_dec();
+		return 0;
+	}
 	buffer_ring_t *buf;
 	if (is_depth)
 		buf = &kinects[index]->depth;
@@ -366,7 +374,7 @@ static int runloop_enter(int index)
 		return -1;
 	}
 	if (!thread_running || !kinects[index])
-		if (setup_kinect(index, FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_11BIT, 1))
+		if (setup_kinect(index, FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_11BIT, -1))
 			return -1;
 
 	pending_runloop_tasks_inc();
