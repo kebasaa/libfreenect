@@ -40,6 +40,7 @@
 //   --range default|near|full depth range kept (default 800-4000 mm)
 //   --hires                   colour at 1280x1024 (1280x960 on 1473/K4W)
 //   --sync                    automatic depth/colour timing alignment
+//   --no-depth                colour only
 
 static unsigned depth_frames = 0, video_frames = 0;
 static unsigned sec_depth = 0, sec_video = 0;
@@ -76,7 +77,7 @@ static void video_cb(freenect_device* dev, void* data, uint32_t timestamp)
 
 static void usage(void)
 {
-	printf("Usage: freenect-camtest [seconds] [--depth-res low|verylow] [--range default|near|full] [--hires] [--sync]\n");
+	printf("Usage: freenect-camtest [seconds] [--depth-res low|verylow] [--range default|near|full] [--hires] [--sync] [--no-depth]\n");
 }
 
 int main(int argc, char** argv)
@@ -85,7 +86,7 @@ int main(int argc, char** argv)
 	freenect_resolution depth_res = FREENECT_RESOLUTION_MEDIUM;
 	freenect_resolution video_res = FREENECT_RESOLUTION_MEDIUM;
 	freenect_depth_range range = FREENECT_DEPTH_RANGE_DEFAULT;
-	int sync = 0;
+	int sync = 0, no_depth = 0;
 
 	// Stop cleanly on Ctrl+C, termination, or when the terminal is closed.
 	fn_install_exit_handlers();
@@ -107,6 +108,8 @@ int main(int argc, char** argv)
 			i++;
 		} else if (strcmp(a, "--hires") == 0) {
 			video_res = FREENECT_RESOLUTION_HIGH;
+		} else if (strcmp(a, "--no-depth") == 0) {
+			no_depth = 1;
 		} else if (strcmp(a, "--sync") == 0) {
 			sync = 1;
 		} else if (a[0] >= '0' && a[0] <= '9') {
@@ -172,7 +175,7 @@ int main(int argc, char** argv)
 	freenect_set_video_callback(fn_dev, video_cb);
 
 	// Start depth and video.
-	ret = freenect_start_depth(fn_dev);
+	ret = no_depth ? 0 : freenect_start_depth(fn_dev);
 	if (ret < 0)
 	{
 		freenect_shutdown(fn_ctx);
@@ -186,9 +189,12 @@ int main(int argc, char** argv)
 	}
 	{
 		freenect_frame_mode vm = freenect_get_current_video_mode(fn_dev);
-		printf("Depth %dx%d mm, range %s; colour %dx%d\n", depth_w, depth_h,
-		       range == FREENECT_DEPTH_RANGE_FULL ? "full" : range == FREENECT_DEPTH_RANGE_NEAR ? "near" : "default",
-		       vm.width, vm.height);
+		if (no_depth)
+			printf("No depth; colour %dx%d\n", vm.width, vm.height);
+		else
+			printf("Depth %dx%d mm, range %s; colour %dx%d\n", depth_w, depth_h,
+			       range == FREENECT_DEPTH_RANGE_FULL ? "full" : range == FREENECT_DEPTH_RANGE_NEAR ? "near" : "default",
+			       vm.width, vm.height);
 	}
 	if (sync) {
 		ret = freenect_set_stream_timing_auto(fn_dev, 1);
@@ -224,7 +230,8 @@ int main(int argc, char** argv)
 	fflush(stdout);
 
 	// Stop everything and shutdown.
-	freenect_stop_depth(fn_dev);
+	if (!no_depth)
+		freenect_stop_depth(fn_dev);
 	freenect_stop_video(fn_dev);
 	freenect_close_device(fn_dev);
 	freenect_shutdown(fn_ctx);
