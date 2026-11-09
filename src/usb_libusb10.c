@@ -495,12 +495,24 @@ FN_INTERNAL int fnusb_claim_camera(freenect_device* dev)
 		return ret;
 	}
 
-	if (dev->usb_cam.PID == PID_K4W_CAMERA)
+	// The K4W and 1473 cameras have two alternate settings, and alt 0 has no
+	// isochronous bandwidth: select alt 1, as the Microsoft driver does when
+	// the interface has two (§10A.2). Decided from the descriptor, not the PID.
+	int num_alt = 1;
+	struct libusb_config_descriptor *config = NULL;
+	if (libusb_get_active_config_descriptor(libusb_get_device(dev->usb_cam.dev), &config) == 0 && config) {
+		if (config->bNumInterfaces > 0)
+			num_alt = config->interface[0].num_altsetting;
+		libusb_free_config_descriptor(config);
+	} else if (dev->usb_cam.PID == PID_K4W_CAMERA) {
+		num_alt = 2; // descriptor unreadable: fall back to the PID
+	}
+	if (num_alt >= 2)
 	{
 		ret = libusb_set_interface_alt_setting(dev->usb_cam.dev, 0, 1);
 		if (ret != 0)
 		{
-			FN_ERROR("Failed to set alternate interface #1 for K4W: %s\n", libusb_error_name(ret));
+			FN_ERROR("Failed to set alternate setting 1 of the camera interface: %s\n", libusb_error_name(ret));
 			libusb_close(dev->usb_cam.dev);
 			dev->usb_cam.dev = NULL;
 			return ret;
