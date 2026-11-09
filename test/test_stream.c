@@ -173,6 +173,19 @@ int main(void)
 	CHECK(s.dropped_frames == 6, "every dropped frame is counted");
 	stop(&s);
 
+	/* a stream whose frames never end where expected: start, two middles,
+	 * then a start again where the third middle should be */
+	start(&s, 0);
+	{
+		int k;
+		for (k = 0; k < FN_STREAM_STALL_PKTS + 10; k++)
+			send_pkt(&s, k % 3 == 0 ? 0 : 1, 30, 0, 0);
+	}
+	CHECK(s.valid_frames == 0 && s.stall_reported == 1, "no complete frame for a few seconds: reported once");
+	CHECK(s.resyncs_order > 0 && s.last_order_flag == (FLAG | 1) && s.last_order_pos == 3,
+	      "  with the out-of-order packet's type and position");
+	stop(&s);
+
 	/* a stream that starts mid-frame syncs on the next start of frame */
 	start(&s, 0);
 	seq = 40;

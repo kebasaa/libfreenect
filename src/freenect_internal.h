@@ -255,7 +255,21 @@ typedef struct {
 	uint64_t sof_us, eof_us;     // host time of the open frame's first and last packet
 	uint64_t mid_us;             // host time midway through the last delivered frame
 	unsigned int delivered;      // frames delivered since the stream start
+	// Diagnostics since the stream start (logged when it stops, or when no
+	// frame completes at all)
+	unsigned int pkts_seen;      // non-empty packets
+	unsigned int oversized, short_pkts;
+	unsigned int resyncs_lost, resyncs_order;
+	uint8_t last_order_flag;     // type of the last out-of-order packet
+	int last_order_pos;          // and where in the frame it came
+	int stall_reported;
 } packet_stream;
+
+// Stream start: stay quiet about lost packets for about a second (one
+// packet per 125 µs microframe); report a stream with no complete frame
+// after about three.
+#define FN_STREAM_QUIET_PKTS 8000
+#define FN_STREAM_STALL_PKTS 24000
 
 // Frame reassembly from the camera's isochronous packets (stream.c).
 // stream_process() returns the size of a completed frame, or 0.

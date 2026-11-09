@@ -100,8 +100,21 @@ FN_INTERNAL int stream_process(freenect_context *ctx, packet_stream *strm, uint8
 	freenect_loglevel l_info = LL_INFO;
 	freenect_loglevel l_notice = LL_NOTICE;
 	freenect_loglevel l_warning = LL_WARNING;
-	if (strm->valid_frames < 2)
+	// A stream start always loses a few packets: stay quiet about that, but
+	// only for about a second, so that a stream that never gets going still
+	// says why.
+	strm->pkts_seen++;
+	if (strm->valid_frames < 2 && strm->pkts_seen < FN_STREAM_QUIET_PKTS)
 		l_debug = l_info = l_notice = l_warning = LL_SPEW;
+	if (!strm->stall_reported && strm->valid_frames == 0 && strm->pkts_seen >= FN_STREAM_STALL_PKTS) {
+		strm->stall_reported = 1;
+		FN_WARNING("[Stream %02x] No complete frame after %u packets: %u lost, %u with an invalid header, "
+		           "%u too long, %u too short; %u resyncs after lost packets, %u after out-of-order packets "
+		           "(last: type %02x at packet %d of %d)\n",
+		           strm->flag, strm->pkts_seen, strm->lost_pkts, strm->bad_magic, strm->oversized, strm->short_pkts,
+		           strm->resyncs_lost, strm->resyncs_order, strm->last_order_flag, strm->last_order_pos,
+		           strm->pkts_per_frame);
+	}
 
 	if (hdr->magic[0] != 'R' || hdr->magic[1] != 'B') {
 		// Dropped; the sequence gap it leaves marks the frame incomplete.
@@ -145,6 +158,7 @@ FN_INTERNAL int stream_process(freenect_context *ctx, packet_stream *strm, uint8
 
 		if (lost > 5 || strm->variable_length) {
 			FN_LOG(l_notice, "[Stream %02x] Lost too many packets, resyncing...\n", strm->flag);
+			strm->resyncs_lost++;
 			strm->synced = 0;
 			return 0;
 		}
@@ -175,6 +189,9 @@ FN_INTERNAL int stream_process(freenect_context *ctx, packet_stream *strm, uint8
 		    !(strm->pkt_num > 0 && strm->pkt_num < strm->pkts_per_frame-1 && hdr->flag == mof)) {
 			FN_LOG(l_notice, "[Stream %02x] Inconsistent flag %02x with %d packets in buf (%d total), resyncing...\n",
 			       strm->flag, hdr->flag, strm->pkt_num, strm->pkts_per_frame);
+			strm->resyncs_order++;
+			strm->last_order_flag = hdr->flag;
+			strm->last_order_pos = strm->pkt_num;
 			strm->synced = 0;
 			return got_frame_size;
 		}
@@ -182,6 +199,7 @@ FN_INTERNAL int stream_process(freenect_context *ctx, packet_stream *strm, uint8
 		if (datalen > expected_pkt_size) {
 			FN_LOG(l_warning, "[Stream %02x] Expected max %d data bytes, but got %d. Dropping...\n",
 			       strm->flag, expected_pkt_size, datalen);
+			strm->oversized++;
 			// Its place in the frame stays unfilled: the sequence gap the
 			// next packet shows marks the frame incomplete.
 			return got_frame_size;
@@ -189,6 +207,7 @@ FN_INTERNAL int stream_process(freenect_context *ctx, packet_stream *strm, uint8
 		if (datalen < expected_pkt_size) {
 			FN_LOG(l_warning, "[Stream %02x] Expected %d data bytes, but got %d\n",
 			       strm->flag, expected_pkt_size, datalen);
+			strm->short_pkts++;
 			strm->frame_bad = 1;
 		}
 	} else {
@@ -197,6 +216,9 @@ FN_INTERNAL int stream_process(freenect_context *ctx, packet_stream *strm, uint8
 		    !(strm->pkt_num < strm->pkts_per_frame && (hdr->flag == eof || hdr->flag == mof))) {
 			FN_LOG(l_notice, "[Stream %02x] Inconsistent flag %02x with %d packets in buf (%d total), resyncing...\n",
 			       strm->flag, hdr->flag, strm->pkt_num, strm->pkts_per_frame);
+			strm->resyncs_order++;
+			strm->last_order_flag = hdr->flag;
+			strm->last_order_pos = strm->pkt_num;
 			strm->synced = 0;
 			return got_frame_size;
 		}
@@ -261,6 +283,13 @@ FN_INTERNAL void stream_init(freenect_context *ctx, packet_stream *strm, int rle
 	strm->bad_magic = 0;
 	strm->sof_us = strm->eof_us = strm->mid_us = 0;
 	strm->delivered = 0;
+	strm->pkts_seen = 0;
+	strm->lost_pkts = 0;
+	strm->oversized = strm->short_pkts = 0;
+	strm->resyncs_lost = strm->resyncs_order = 0;
+	strm->last_order_flag = 0;
+	strm->last_order_pos = 0;
+	strm->stall_reported = 0;
 	strm->keep_incomplete = keep && strcmp(keep, "1") == 0;
 	// strm->skip_frames is set by the caller after stream_init()
 
@@ -290,9 +319,11 @@ FN_INTERNAL void stream_init(freenect_context *ctx, packet_stream *strm, int rle
 
 FN_INTERNAL void stream_freebufs(freenect_context *ctx, packet_stream *strm)
 {
-	if (strm->valid_frames > 0 && (strm->dropped_frames > 0 || strm->bad_magic > 0))
-		FN_INFO("[Stream %02x] %u of %d frames dropped as incomplete; %u packets with an invalid header\n",
-		        strm->flag, strm->dropped_frames, strm->valid_frames, strm->bad_magic);
+	if (strm->pkts_seen > 0)
+		FN_INFO("[Stream %02x] %d frames, %u dropped as incomplete; packets: %u lost, %u with an invalid header, "
+		        "%u too long, %u too short; %u resyncs\n",
+		        strm->flag, strm->valid_frames, strm->dropped_frames, strm->lost_pkts, strm->bad_magic,
+		        strm->oversized, strm->short_pkts, strm->resyncs_lost + strm->resyncs_order);
 
 	if (strm->split_bufs)
 		free(strm->raw_buf);
