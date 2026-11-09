@@ -1116,6 +1116,10 @@ FN_INTERNAL int freenect_camera_init(freenect_device *dev)
 		FN_ERROR("freenect_camera_init(): Failed to fetch const shift for device\n");
 		return res;
 	}
+	// Only for freenect_nudge_stream_timing(); a camera without them streams
+	// as before.
+	if (fn_fetch_timing_params(dev) < 0)
+		FN_INFO("freenect_camera_init(): no stream timing parameters; stream timing alignment unavailable\n");
 	// A program that was killed while depth ran leaves the IR projector on
 	// until the Kinect loses power; switch it off until depth starts.
 	if (fn_set_ir_emitter(dev, 0) < 0)

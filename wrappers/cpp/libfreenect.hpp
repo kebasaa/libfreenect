@@ -158,6 +158,12 @@ namespace Freenect {
 		int getColorSetting(freenect_color_setting setting, double &value) {
 			return freenect_get_color_setting(m_dev, setting, &value);
 		}
+		int nudgeStreamTiming(int depth_nudge_us) {
+			return freenect_nudge_stream_timing(m_dev, depth_nudge_us);
+		}
+		int setStreamTimingAuto(bool on) {
+			return freenect_set_stream_timing_auto(m_dev, on ? 1 : 0);
+		}
 		freenect_depth_range getDepthRange() {
 			return freenect_get_depth_range(m_dev);
 		}

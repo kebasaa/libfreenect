@@ -37,6 +37,8 @@
 static int pass = 1;
 #define CHECK(cond, what) do { int ok_ = (cond); printf("  %-62s %s\n", what, ok_ ? "PASS" : "FAIL"); pass &= ok_; } while (0)
 
+uint64_t fn_now_us(void) { static uint64_t t; return t += 1000; }
+
 void fn_log(freenect_context *ctx, freenect_loglevel level, const char *fmt, ...)
 {
 	(void)ctx; (void)level; (void)fmt;
@@ -135,6 +137,8 @@ int main(void)
 	CHECK(r1 == FRAME && frame_is(&s, 1), "a complete frame is delivered, with its data");
 	r1 = send_frame(&s, 2, intact);
 	CHECK(r1 == FRAME && frame_is(&s, 2), "and the next one");
+	CHECK(s.delivered == 2 && s.eof_us > s.sof_us && s.mid_us == s.sof_us + (s.eof_us - s.sof_us) / 2,
+	      "delivered frames are counted and get a midpoint time");
 
 	d = intact; d.lose = 2;
 	r1 = send_frame(&s, 3, d);

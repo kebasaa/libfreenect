@@ -82,6 +82,8 @@ static int frame_end(freenect_context *ctx, packet_stream *strm, int size, freen
 		FN_SPEW("[Stream %02x] Skipping a frame after the stream start\n", strm->flag);
 		return 0;
 	}
+	strm->mid_us = strm->sof_us + (strm->eof_us - strm->sof_us) / 2;
+	strm->delivered++;
 	return size;
 }
 
@@ -227,7 +229,11 @@ FN_INTERNAL int stream_process(freenect_context *ctx, packet_stream *strm, uint8
 
 	strm->last_timestamp = fn_le32(hdr->timestamp);
 
+	if (hdr->flag == sof)
+		strm->sof_us = fn_now_us();
+
 	if (hdr->flag == eof) {
+		strm->eof_us = fn_now_us();
 		int size;
 		if (strm->variable_length)
 			size = (int)(dbuf - strm->raw_buf) + datalen;
@@ -253,6 +259,8 @@ FN_INTERNAL void stream_init(freenect_context *ctx, packet_stream *strm, int rle
 	strm->frame_bad = 0;
 	strm->dropped_frames = 0;
 	strm->bad_magic = 0;
+	strm->sof_us = strm->eof_us = strm->mid_us = 0;
+	strm->delivered = 0;
 	strm->keep_incomplete = keep && strcmp(keep, "1") == 0;
 	// strm->skip_frames is set by the caller after stream_init()
 

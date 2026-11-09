@@ -30,6 +30,7 @@
 #include "libfreenect.h"
 #include "libfreenect_registration.h"
 #include "libfreenect_audio.h"
+#include "stream_timing.h"
 
 #ifdef __ELF__
   #define FN_INTERNAL	__attribute__ ((visibility ("hidden")))
@@ -251,6 +252,9 @@ typedef struct {
 	int skip_frames;             // complete frames still to skip after the stream start
 	unsigned int dropped_frames; // incomplete frames dropped since the stream start
 	unsigned int bad_magic;      // packets without the "RB" header
+	uint64_t sof_us, eof_us;     // host time of the open frame's first and last packet
+	uint64_t mid_us;             // host time midway through the last delivered frame
+	unsigned int delivered;      // frames delivered since the stream start
 } packet_stream;
 
 // Frame reassembly from the camera's isochronous packets (stream.c).
@@ -264,6 +268,10 @@ FN_INTERNAL int stream_setbuf(freenect_context *ctx, packet_stream *strm, void *
 FN_INTERNAL void fn_color_init(freenect_device *dev);
 FN_INTERNAL void fn_color_on_video_start(freenect_device *dev);
 FN_INTERNAL void fn_color_apply_pending(freenect_device *dev);
+
+// Depth/colour frame phase alignment (timing.c)
+FN_INTERNAL int fn_fetch_timing_params(freenect_device *dev);
+FN_INTERNAL void fn_timing_process(freenect_device *dev);
 
 typedef struct {
 	int running;
@@ -324,6 +332,10 @@ struct _freenect_device {
 	uint32_t color_pending;  // bit per setting still to be sent to the camera
 	uint16_t ir_brightness; // IR brightness the application set (register 0x15), 0 if none
 	int near_mode;          // FREENECT_NEAR_MODE is on (it owns register 0x15 then)
+	int32_t timing_k2, timing_k3; // stream timing parameters (cmd 0x16 param 6); k2 0 if unavailable
+	int timing_auto;              // freenect_set_stream_timing_auto() is on
+	fn_phase_state timing_phase;  // its phase estimate
+	unsigned int timing_seen_depth, timing_seen_video; // frames it has seen
 	uint16_t *depth_full; // 640x480 work buffer for the 320x240 and 80x60 depth modes
 	int depth_mirrored;    // FREENECT_MIRROR_DEPTH is on (the camera mirrors depth)
 	freenect_video_format video_format;
@@ -410,4 +422,5 @@ int fn_set_ir_emitter(freenect_device *dev, int on);
 
 // Monotonic milliseconds and sleep, shared by the device code.
 uint64_t fn_now_ms(void);
+uint64_t fn_now_us(void);
 void fn_sleep_ms(unsigned ms);

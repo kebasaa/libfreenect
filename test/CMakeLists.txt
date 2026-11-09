@@ -66,3 +66,8 @@ add_test(NAME color_device COMMAND test_color_device)
 # against a simulated camera on the GM command channel.
 add_executable(test_near_ir test_near_ir.c ${CMAKE_SOURCE_DIR}/src/flags.c)
 add_test(NAME near_ir COMMAND test_near_ir)
+
+# Depth/colour phase alignment (src/stream_timing.h): the driver's nudge
+# value and Kinect10's phase estimate.
+add_executable(test_stream_timing test_stream_timing.c)
+add_test(NAME stream_timing COMMAND test_stream_timing)

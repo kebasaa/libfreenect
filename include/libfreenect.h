@@ -807,6 +807,28 @@ FREENECTAPI int freenect_set_color_setting(freenect_device *dev, freenect_color_
 FREENECTAPI int freenect_get_color_setting(freenect_device *dev, freenect_color_setting setting, double *value);
 
 /**
+ * Shifts the depth stream's frame timing by depth_nudge_us microseconds
+ * (modulo one 30 fps frame period), to bring depth frames into phase with
+ * colour frames, as Microsoft's runtime does. Depth and colour keep their
+ * frame rates; only depth's phase moves.
+ *
+ * @return 0 on success, -ENOTSUP if the camera reported no timing
+ *         parameters, < 0 on other errors
+ */
+FREENECTAPI int freenect_nudge_stream_timing(freenect_device *dev, int depth_nudge_us);
+
+/**
+ * Switches automatic depth/colour phase alignment on or off (default off).
+ * While depth and colour (at 30, 15 or 12 fps, not hi-res) both stream,
+ * libfreenect measures when their frames arrive and nudges depth into
+ * phase with colour, as Microsoft's runtime does when stream sync is
+ * enabled. It runs in freenect_process_events().
+ *
+ * @return 0 on success, -ENOTSUP if the camera reported no timing parameters
+ */
+FREENECTAPI int freenect_set_stream_timing_auto(freenect_device *dev, int on);
+
+/**
  * Switches the IR projector (laser) on or off.
  *
  * The projector is switched on when depth starts and off when it stops. With

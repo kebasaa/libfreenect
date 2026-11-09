@@ -1397,6 +1397,20 @@ FN_INTERNAL uint64_t fn_now_ms(void) {
 #endif
 }
 
+// Monotonic microseconds, for frame time stamps (stream timing alignment).
+FN_INTERNAL uint64_t fn_now_us(void) {
+#ifdef _WIN32
+	LARGE_INTEGER f, c;
+	QueryPerformanceFrequency(&f);
+	QueryPerformanceCounter(&c);
+	return (uint64_t)(c.QuadPart / f.QuadPart) * 1000000 + (uint64_t)(c.QuadPart % f.QuadPart) * 1000000 / (uint64_t)f.QuadPart;
+#else
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000 + (uint64_t)(ts.tv_nsec / 1000);
+#endif
+}
+
 FN_INTERNAL void fn_sleep_ms(unsigned ms) {
 #ifdef _WIN32
 	Sleep(ms);

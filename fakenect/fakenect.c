@@ -636,6 +636,19 @@ int freenect_get_color_setting(freenect_device *dev, freenect_color_setting sett
 	return -ENOTSUP;
 }
 
+// A recording's frame timing is fixed.
+int freenect_nudge_stream_timing(freenect_device *dev, int depth_nudge_us)
+{
+	(void)dev; (void)depth_nudge_us;
+	return -ENOTSUP;
+}
+
+int freenect_set_stream_timing_auto(freenect_device *dev, int on)
+{
+	(void)dev; (void)on;
+	return -ENOTSUP;
+}
+
 int freenect_supported_subdevices(void)
 {
     return FREENECT_DEVICE_MOTOR | FREENECT_DEVICE_CAMERA;
