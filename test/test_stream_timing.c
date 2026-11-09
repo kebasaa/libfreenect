@@ -30,6 +30,7 @@
  * Kinect10's phase estimate (§20.7.3) on simulated 30 fps frame trains.
  */
 #include <stdio.h>
+#include <string.h>
 #include "stream_timing.h"
 
 static int pass = 1;
@@ -81,6 +82,37 @@ int main(void)
 	CHECK(n == 0, "depth and colour in phase: no nudge");
 	n = run(10000, 10, &nudge);
 	CHECK(n == 0, "colour at 10 fps (hi-res): no estimate");
+
+	/* when a suggestion is acted on */
+	{
+		fn_timing_policy p;
+		uint64_t t = 1000000;
+		int sent = 0, i;
+		memset(&p, 0, sizeof(p));
+		for (i = 0; i < 50; i++)
+			sent += fn_timing_accept(&p, 100, t += 200000);
+		CHECK(sent == 0, "phase within 0.1 ms, 50 times: never nudged");
+		for (i = 0; i < 50; i++)
+			sent += fn_timing_accept(&p, i % 8 == 0 ? 32000 : 120, t += 200000);
+		CHECK(sent == 0, "  nor with an odd 32000 among them (the noise seen on Windows)");
+		sent = fn_timing_accept(&p, 1400, t += 200000);
+		sent += fn_timing_accept(&p, 1400, t += 200000);
+		CHECK(sent == 0, "depth late twice: not yet");
+		CHECK(fn_timing_accept(&p, 1400, t += 200000) == 1, "  three times in a row: nudged");
+		sent = 0;
+		for (i = 0; i < 20; i++)
+			sent += fn_timing_accept(&p, 1400, t += 200000);
+		CHECK(sent == 0, "  then not again within 5 s");
+		sent = 0;
+		for (i = 0; i < 6; i++)
+			sent += fn_timing_accept(&p, 32000, t += 1000000);
+		CHECK(sent >= 1, "depth early (32000) consistently, 5 s later: nudged");
+		memset(&p, 0, sizeof(p));
+		sent = 0;
+		for (i = 0; i < 6; i++)
+			sent += fn_timing_accept(&p, 33000, t += 1000000);
+		CHECK(sent == 0, "depth early by only 0.3 ms (33000): never nudged");
+	}
 
 	printf(pass ? "All passed\n" : "FAILURES\n");
 	return pass ? 0 : 1;

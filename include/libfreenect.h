@@ -821,8 +821,10 @@ FREENECTAPI int freenect_nudge_stream_timing(freenect_device *dev, int depth_nud
  * Switches automatic depth/colour phase alignment on or off (default off).
  * While depth and colour (at 30, 15 or 12 fps, not hi-res) both stream,
  * libfreenect measures when their frames arrive and nudges depth into
- * phase with colour, as Microsoft's runtime does when stream sync is
- * enabled. It runs in freenect_process_events().
+ * phase with colour, with the estimate Microsoft's runtime uses when stream
+ * sync is enabled. Because libfreenect's frame times jitter more, it nudges
+ * only when the phase is off by at least 1 ms in several estimates in a
+ * row, and at most every 5 s. It runs in freenect_process_events().
  *
  * @return 0 on success, -ENOTSUP if the camera reported no timing parameters
  */

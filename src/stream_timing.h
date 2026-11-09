@@ -56,6 +56,52 @@ static inline int fn_timing_nudge_value(int32_t nudge_us, int32_t k2, int32_t k3
 }
 
 /*
+ * Whether to act on a nudge the phase estimate suggests. libfreenect's frame
+ * times are taken in user mode when a USB transfer completes, so they jitter
+ * far more than the driver's: on Windows the estimate suggested a nudge about
+ * five times a second, most of them for phase errors of about 0.1 ms, and
+ * now and then one 20-32 ms the other way. So, unlike Kinect10, a nudge is
+ * sent only
+ * - for a phase error of at least FN_TIMING_DEADBAND_US either way,
+ * - when FN_TIMING_AGREE suggestions in a row point the same way, and
+ * - at most every FN_TIMING_MIN_GAP_US.
+ */
+#define FN_TIMING_DEADBAND_US 1000
+#define FN_TIMING_AGREE 3
+#define FN_TIMING_MIN_GAP_US 5000000
+
+typedef struct {
+	int last_dir;          // -1, 0 (aligned) or +1: the last suggestion
+	int agree;             // suggestions in a row with that direction
+	uint64_t last_nudge_us;
+	int nudged;            // a nudge has been sent
+} fn_timing_policy;
+
+// nudge_us as fn_phase_update() gives it: up to 1400 for depth late, at least
+// 32000 (a period minus the error) for depth early. Returns 1 to send it.
+static inline int fn_timing_accept(fn_timing_policy *p, int32_t nudge_us, uint64_t now_us)
+{
+	int dir;
+	if (nudge_us > 0 && nudge_us < FN_TIMING_PERIOD_US / 2)
+		dir = nudge_us >= FN_TIMING_DEADBAND_US ? 1 : 0;
+	else
+		dir = FN_TIMING_PERIOD_US - nudge_us >= FN_TIMING_DEADBAND_US ? -1 : 0;
+	if (dir != 0 && dir == p->last_dir)
+		p->agree++;
+	else
+		p->agree = dir != 0 ? 1 : 0;
+	p->last_dir = dir;
+	if (dir == 0 || p->agree < FN_TIMING_AGREE)
+		return 0;
+	if (p->nudged && now_us - p->last_nudge_us < FN_TIMING_MIN_GAP_US)
+		return 0;
+	p->nudged = 1;
+	p->last_nudge_us = now_us;
+	p->agree = 0;
+	return 1;
+}
+
+/*
  * Kinect10's phase estimate (FUN_180049160). Feed it the midpoint of every
  * colour and depth frame (host time in µs, depth already 3600 µs earlier, as
  * the driver stamps it). After more than 5 overlapping samples it gives the

@@ -349,6 +349,7 @@ struct _freenect_device {
 	int32_t timing_k2, timing_k3; // stream timing parameters (cmd 0x16 param 6); k2 0 if unavailable
 	int timing_auto;              // freenect_set_stream_timing_auto() is on
 	fn_phase_state timing_phase;  // its phase estimate
+	fn_timing_policy timing_policy; // and when it acts on it
 	unsigned int timing_seen_depth, timing_seen_video; // frames it has seen
 	uint16_t *depth_full; // 640x480 work buffer for the 320x240 and 80x60 depth modes
 	int depth_mirrored;    // FREENECT_MIRROR_DEPTH is on (the camera mirrors depth)

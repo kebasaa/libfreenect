@@ -106,6 +106,7 @@ int freenect_set_stream_timing_auto(freenect_device *dev, int on)
 		return -ENOTSUP;
 	dev->timing_auto = on != 0;
 	fn_phase_reset(&dev->timing_phase);
+	memset(&dev->timing_policy, 0, sizeof(dev->timing_policy));
 	dev->timing_seen_depth = dev->depth.delivered;
 	dev->timing_seen_video = dev->video.delivered;
 	return 0;
@@ -147,6 +148,11 @@ FN_INTERNAL void fn_timing_process(freenect_device *dev)
 				due |= fn_phase_update(&dev->timing_phase, 0, c, rate, &nudge);
 		}
 	}
-	if (due)
-		freenect_nudge_stream_timing(dev, nudge);
+	if (due) {
+		freenect_context *ctx = dev->parent;
+		if (fn_timing_accept(&dev->timing_policy, nudge, fn_now_us()))
+			freenect_nudge_stream_timing(dev, nudge);
+		else
+			FN_SPEW("Stream timing: phase estimate suggests %d us; not acted on\n", nudge);
+	}
 }
