@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "freenect"
-version = "0.7.5"
+version = "0.8.0"
 description = "Python bindings for libfreenect (Kinect v1): streams, motor and LED, coordinate mapping, microphone array beamforming, skeleton, hand and gesture tracking"
 readme = "README.md"
 requires-python = ">=3.9"
