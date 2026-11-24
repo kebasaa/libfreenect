@@ -124,12 +124,12 @@ jobs:
       # viewers and the PipeWire microphone need.
       - name: Configure
         run: >
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+          .github/report-failure.sh "Configure" cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
           -DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_FAKENECT=ON -DBUILD_NUI=ON
           -DBUILD_TESTS=OFF -DBUILD_CPACK_DEB=ON -DCPACK_DEBIAN_PACKAGE_SHLIBDEPS=ON
 
       - name: Build
-        run: cmake --build build --parallel
+        run: .github/report-failure.sh "Build" cmake --build build --parallel
 
       - name: Package, install and smoke test (no Kinect attached)
         run: |
@@ -208,7 +208,7 @@ jobs:
       # programs (@loader_path/../lib), wherever the archive is unpacked.
       - name: Configure
         run: >
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+          .github/report-failure.sh "Configure" cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
           -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
           -DCMAKE_INSTALL_RPATH="@loader_path/../lib" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/glfw"
           -DLIBUSB_1_INCLUDE_DIR="$RUNNER_TEMP/libusb/include/libusb-1.0"
@@ -217,7 +217,7 @@ jobs:
           -DBUILD_FAKENECT=ON -DBUILD_NUI=ON -DBUILD_TESTS=OFF
 
       - name: Build
-        run: cmake --build build --parallel
+        run: .github/report-failure.sh "Build" cmake --build build --parallel
 
       - name: Package with libusb inside
         run: |
