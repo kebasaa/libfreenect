@@ -222,6 +222,10 @@ configure_file(
 # --- cmake config file ---
 CONFIGURE_FILE(libfreenectConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/libfreenectConfig.cmake @ONLY)
 INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/libfreenectConfig.cmake DESTINATION share/${PROJECT_NAME})
+if (UNIX)
+  # the licence texts, with the packages (the .deb, the macOS archive)
+  install(FILES APACHE20 GPL2 CONTRIB DESTINATION share/doc/libfreenect/licenses)
+endif ()
 
 add_custom_target(uninstall
   COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/UninstallTarget.cmake)

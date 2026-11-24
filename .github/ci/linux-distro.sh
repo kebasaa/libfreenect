@@ -6,6 +6,9 @@
 #
 # A failure is reported as a GitHub annotation naming the step (and, for apt,
 # the end of its output), so that it can be read without the job log.
+#
+# For the release workflow: EXTRA_CMAKE adds CMake options, OUT (a path
+# under the source tree) keeps a copy of the .deb.
 set -eu
 export DEBIAN_FRONTEND=noninteractive
 SRC=$(pwd)
@@ -76,7 +79,7 @@ dpkg -s libusb-1.0-0-dev libglfw3-dev 2>/dev/null | grep -E '^(Package|Version):
 step "configure and build (-Werror)"
 cmake -S "$SRC" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
 	-DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_FAKENECT=ON \
-	-DFREENECT_GL_VIEWERS=GLFW -DBUILD_CPACK_DEB=ON -DFREENECT_WERROR=ON
+	-DFREENECT_GL_VIEWERS=GLFW -DBUILD_CPACK_DEB=ON -DFREENECT_WERROR=ON ${EXTRA_CMAKE:-}
 if ! cmake --build "$BUILD" --parallel "$(nproc)" > /tmp/build.log 2>&1; then
 	cat /tmp/build.log
 	grep -E ': (error|warning): ' /tmp/build.log | head -n 20 | while IFS= read -r line; do
@@ -105,6 +108,11 @@ udevadm verify --no-style "$SRC/platform/linux/udev/51-kinect.rules"
 step ".deb: build, install, remove"
 (cd "$BUILD" && cpack -G DEB)
 deb=$(ls "$BUILD"/*.deb)
+if [ -n "${OUT:-}" ]; then
+	mkdir -p "$(dirname "$SRC/$OUT")"
+	cp "$deb" "$SRC/$OUT"
+	echo "package: $OUT"
+fi
 dpkg-deb -c "$deb" | grep -E 'udev/rules.d/51-kinect.rules|systemd/system/freenect-fwloader.service|bin/freenect-fwloader$'
 dpkg -i "$deb"
 test -f /usr/lib/udev/rules.d/51-kinect.rules

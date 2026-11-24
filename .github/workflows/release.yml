@@ -1,0 +1,313 @@
+name: Release
+
+# Builds every program for every platform and publishes a GitHub release
+# with the packages attached, downloadable by anyone:
+#
+#   git tag v0.8.0
+#   git push origin v0.8.0
+#
+# A push to the fork-release branch (or running it by hand) only builds the
+# packages and keeps them as workflow artifacts: a dry run, nothing published.
+#
+# Nothing of Microsoft's is ever packaged: the audio firmware, the beamformer
+# weights and the skeleton tracker's models are fetched on the user's machine
+# by freenect-driver-install / fwfetcher.py, from Microsoft's own download.
+
+on:
+  push:
+    tags: ["v*"]
+    branches: [fork-release] # a dry run: builds the packages, publishes nothing
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            triplet: x64-windows
+          - arch: ARM64
+            triplet: arm64-windows
+    env:
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.triplet }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure
+        shell: pwsh
+        run: >
+          cmake -S . -B build -A ${{ matrix.arch }}
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+          -DVCPKG_MANIFEST_FEATURES=examples
+          -DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_NUI=ON
+          -DBUILD_FAKENECT=OFF -DBUILD_DRIVER_INSTALLER=ON -DBUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = "libfreenect-$env:GITHUB_REF_NAME-windows-${{ matrix.arch }}".Replace('/', '-')
+          $d = "dist\$name"
+          New-Item -ItemType Directory -Force "$d\bin", "$d\lib", "$d\licenses" | Out-Null
+          # every program, and the DLLs next to them (libusb and GLFW from vcpkg)
+          Get-ChildItem build\bin\Release\* -Include *.exe, *.dll | Where-Object { $_.Name -notlike 'test_*' } |
+            Copy-Item -Destination "$d\bin"
+          Copy-Item build\lib\Release\*.dll "$d\bin"
+          Copy-Item build\lib\Release\*.lib "$d\lib"
+          Copy-Item -Recurse include "$d\include"
+          Copy-Item wrappers\c_sync\libfreenect_sync.h "$d\include"
+          Copy-Item README.md "$d\README.md"
+          Copy-Item platform\windows\README.md "$d\README-Windows.md"
+          Copy-Item .github\packaging\RELEASE-README.txt "$d\README-RELEASE.txt"
+          Copy-Item APACHE20, GPL2, CONTRIB "$d\licenses"
+          # the third-party libraries' licences, as vcpkg records them
+          Get-ChildItem "build\vcpkg_installed\${{ matrix.triplet }}\share\*\copyright" | ForEach-Object {
+            Copy-Item $_ "$d\licenses\$($_.Directory.Name).txt"
+          }
+          foreach ($f in 'bin\freenect-driver-install.exe', 'bin\freenect-fwloader.exe', 'bin\freenect-glview.exe',
+                         'bin\freenect-nuitest.exe', 'bin\freenect-micbeam.exe', 'bin\libusb-1.0.dll', 'licenses\libusb.txt') {
+            if (-not (Test-Path "$d\$f")) { throw "$f is missing from the package" }
+          }
+          Get-ChildItem "$d\bin" | Select-Object -ExpandProperty Name
+          Compress-Archive -Path $d -DestinationPath "dist\$name.zip"
+
+      - name: Smoke test of the package (no Kinect attached)
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          $name = "libfreenect-$env:GITHUB_REF_NAME-windows-x64".Replace('/', '-')
+          Expand-Archive "dist\$name.zip" "$env:RUNNER_TEMP\unpacked"
+          $bin = "$env:RUNNER_TEMP\unpacked\$name\bin"
+          & "$bin\freenect-driver-install.exe" --list
+          if ($LASTEXITCODE -ne 0) { throw "freenect-driver-install --list failed" }
+          & "$bin\freenect-fwloader.exe"
+          if ($LASTEXITCODE -ne 2) { throw "freenect-fwloader should report no Kinect (exit 2), got $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ matrix.arch }}
+          path: dist/*.zip
+
+  # Built on Ubuntu 24.04, the oldest supported release, so the packages also
+  # install on newer Ubuntu, Debian 13 and 64-bit Raspberry Pi OS (arm64).
+  linux:
+    name: Linux ${{ matrix.arch }} (.deb)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: amd64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake build-essential pkg-config dpkg-dev file \
+            libusb-1.0-0-dev libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev libpipewire-0.3-dev
+
+      # The package's dependencies are worked out from the libraries the
+      # programs link (dpkg-shlibdeps), so installing it brings what the
+      # viewers and the PipeWire microphone need.
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+          -DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON -DBUILD_FAKENECT=ON -DBUILD_NUI=ON
+          -DBUILD_TESTS=OFF -DBUILD_CPACK_DEB=ON -DCPACK_DEBIAN_PACKAGE_SHLIBDEPS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Package, install and smoke test (no Kinect attached)
+        run: |
+          set -e
+          (cd build && cpack -G DEB)
+          name="libfreenect-${GITHUB_REF_NAME//\//-}-linux-${{ matrix.arch }}.deb"
+          mkdir -p dist
+          cp build/*.deb "dist/$name"
+          dpkg-deb -I "dist/$name"
+          dpkg-deb -c "dist/$name" | grep -E 'bin/freenect-'
+          sudo apt-get install -y "./dist/$name"
+          for v in fwloader camtest glview regview hiview micview micbeam maptest nuitest tiltdemo v4l2; do
+            command -v freenect-$v > /dev/null || { echo "freenect-$v is not in the package"; exit 1; }
+          done
+          set +e
+          freenect-fwloader
+          code=$?
+          test "$code" -eq 2 || { echo "freenect-fwloader should report no Kinect (exit 2), got $code"; exit 1; }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*.deb
+
+  # 32-bit Raspberry Pi OS (Pi 2 and newer): Debian 13's armhf port with
+  # Raspberry Pi's repository, under QEMU (slow: up to an hour or two).
+  raspberry-pi-armhf:
+    name: Raspberry Pi OS armhf (.deb)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        run: docker run --privileged --rm tonistiigi/binfmt --install arm
+
+      - name: Build, test and package in Raspberry Pi OS trixie (armhf)
+        run: >
+          docker run --rm --platform linux/arm/v7
+          -e RPI=1 -e OUT=dist/libfreenect-${GITHUB_REF_NAME//\//-}-raspios-armhf.deb
+          -e "EXTRA_CMAKE=-DBUILD_NUI=ON -DCPACK_DEBIAN_PACKAGE_SHLIBDEPS=ON -DBUILD_TESTS=OFF -DFREENECT_WERROR=OFF"
+          -v "$PWD:/src" -w /src debian:trixie sh .github/ci/linux-distro.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: raspios-armhf
+          path: dist/*.deb
+
+  # One package for both Mac CPUs. Homebrew's libraries have only the
+  # runner's architecture, so libusb and GLFW are built from source as
+  # universal libraries: libusb goes into the package, GLFW is linked in.
+  macos:
+    name: macOS universal (arm64 + x86_64)
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build libusb and GLFW as universal libraries
+        run: |
+          set -e
+          brew install autoconf automake libtool
+          git clone --depth 1 --branch v1.0.29 https://github.com/libusb/libusb "$RUNNER_TEMP/libusb-src"
+          (cd "$RUNNER_TEMP/libusb-src" && ./bootstrap.sh &&
+           ./configure --prefix="$RUNNER_TEMP/libusb" --disable-dependency-tracking \
+             CFLAGS="-arch arm64 -arch x86_64 -mmacosx-version-min=11.0" LDFLAGS="-arch arm64 -arch x86_64" &&
+           make -j"$(sysctl -n hw.ncpu)" && make install)
+          git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw "$RUNNER_TEMP/glfw-src"
+          cmake -S "$RUNNER_TEMP/glfw-src" -B "$RUNNER_TEMP/glfw-build" -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DBUILD_SHARED_LIBS=OFF \
+            -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/glfw"
+          cmake --build "$RUNNER_TEMP/glfw-build" --parallel
+          cmake --install "$RUNNER_TEMP/glfw-build"
+
+      # Installed for /usr/local (where the launchd agent and the microphone
+      # plug-in expect the programs), with the libraries found next to the
+      # programs (@loader_path/../lib), wherever the archive is unpacked.
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          -DCMAKE_INSTALL_RPATH="@loader_path/../lib" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/glfw"
+          -DLIBUSB_1_INCLUDE_DIR="$RUNNER_TEMP/libusb/include/libusb-1.0"
+          -DLIBUSB_1_LIBRARY="$RUNNER_TEMP/libusb/lib/libusb-1.0.dylib"
+          -DFREENECT_GL_VIEWERS=GLFW -DBUILD_EXAMPLES=ON -DBUILD_C_SYNC=ON -DBUILD_CPP=ON
+          -DBUILD_FAKENECT=ON -DBUILD_NUI=ON -DBUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Package with libusb inside
+        run: |
+          set -e
+          stage="$RUNNER_TEMP/stage"
+          DESTDIR="$stage" cmake --install build
+          root="$stage/usr/local"
+          usb=$(cd "$RUNNER_TEMP/libusb/lib" && ls libusb-1.0.*.dylib | head -1)
+          old=$(otool -D "$RUNNER_TEMP/libusb/lib/$usb" | tail -1)
+          cp "$RUNNER_TEMP/libusb/lib/$usb" "$root/lib/"
+          chmod u+w "$root/lib/$usb"
+          install_name_tool -id "@rpath/$usb" "$root/lib/$usb"
+          # every Mach-O file: libusb through @rpath, then signed again (ad hoc:
+          # a changed binary must be re-signed to run on Apple Silicon)
+          find "$root" -type f | while read -r f; do
+            file "$f" | grep -q Mach-O || continue
+            case "$f" in *.app/*|*.driver/*) bundle=1;; *) bundle=0;; esac
+            if otool -L "$f" | grep -qF "$old"; then
+              install_name_tool -change "$old" "@rpath/$usb" "$f"
+              case "$f" in */lib/*) install_name_tool -add_rpath "@loader_path" "$f" 2>/dev/null || true;; esac
+            fi
+            [ "$bundle" = 1 ] || codesign --force --sign - "$f"
+          done
+          find "$root" -type d \( -name '*.app' -o -name '*.driver' \) -prune | while read -r b; do
+            codesign --force --deep --sign - "$b"
+          done
+          # nothing may still point at the build machine
+
+          find "$root" -type f | while read -r f; do
+            file "$f" | grep -q Mach-O || continue
+            if { otool -L "$f"; otool -l "$f"; } | grep -qF "$RUNNER_TEMP"; then echo "::error::$f refers to $RUNNER_TEMP"; exit 1; fi
+          done
+          test -f "$root/share/doc/libfreenect/licenses/APACHE20"
+          cp "$RUNNER_TEMP/libusb-src/COPYING" "$root/share/doc/libfreenect/licenses/libusb.txt"
+          cp "$RUNNER_TEMP/glfw-src/LICENSE.md" "$root/share/doc/libfreenect/licenses/glfw.txt"
+          cp README.md "$root/share/doc/libfreenect/"
+          cp .github/packaging/RELEASE-README.txt "$root/README-RELEASE.txt"
+          name="libfreenect-${GITHUB_REF_NAME//\//-}-macos-universal"
+          mkdir -p dist
+          mv "$root" "$RUNNER_TEMP/$name"
+          tar -C "$RUNNER_TEMP" -czf "dist/$name.tar.gz" "$name"
+          tar -tzf "dist/$name.tar.gz"
+
+      - name: Smoke test of the package (no Kinect attached, no libusb installed)
+        run: |
+          set -e
+          name="libfreenect-${GITHUB_REF_NAME//\//-}-macos-universal"
+          mkdir "$RUNNER_TEMP/unpacked"
+          tar -C "$RUNNER_TEMP/unpacked" -xzf "dist/$name.tar.gz"
+          bin="$RUNNER_TEMP/unpacked/$name/bin"
+          for v in fwloader camtest glview regview hiview micview micbeam maptest nuitest tiltdemo; do
+            test -x "$bin/freenect-$v" || { echo "freenect-$v is not in the package"; exit 1; }
+            case "$(lipo -archs "$bin/freenect-$v")" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "freenect-$v is not universal"; exit 1;; esac
+          done
+          otool -L "$bin/freenect-fwloader"
+          set +e
+          "$bin/freenect-fwloader"
+          code=$?
+          test "$code" -eq 2 || { echo "freenect-fwloader should report no Kinect (exit 2), got $code"; exit 1; }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-universal
+          path: dist/*.tar.gz
+
+  release:
+    name: Publish the GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux, raspberry-pi-armhf, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sed "s/@VERSION@/$GITHUB_REF_NAME/g" .github/packaging/release-notes.md > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "libfreenect $GITHUB_REF_NAME (kebasaa fork)" --notes-file "$RUNNER_TEMP/notes.md"
