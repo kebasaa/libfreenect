@@ -315,10 +315,24 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      # Creates the release, or, when one was already made for this tag on
+      # GitHub's website, attaches the packages to it and keeps its title.
+      # Its text is kept too; the notes (with the download table) go in front
+      # of it unless it already has them.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           sed "s/@VERSION@/$GITHUB_REF_NAME/g" .github/packaging/release-notes.md > "$RUNNER_TEMP/notes.md"
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "libfreenect $GITHUB_REF_NAME (kebasaa fork)" --notes-file "$RUNNER_TEMP/notes.md"
+          if gh release view "$GITHUB_REF_NAME" --json body --jq .body > "$RUNNER_TEMP/existing.md" 2>/dev/null; then
+            echo "The release $GITHUB_REF_NAME exists already: attaching the packages to it"
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            if ! grep -q "## Downloads" "$RUNNER_TEMP/existing.md"; then
+              { cat "$RUNNER_TEMP/notes.md"; echo; cat "$RUNNER_TEMP/existing.md"; } > "$RUNNER_TEMP/merged.md"
+              gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/merged.md"
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "libfreenect $GITHUB_REF_NAME (kebasaa fork)" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name'
