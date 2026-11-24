@@ -226,29 +226,40 @@ jobs:
           DESTDIR="$stage" cmake --install build
           root="$stage/usr/local"
           usb=$(cd "$RUNNER_TEMP/libusb/lib" && ls libusb-1.0.*.dylib | head -1)
-          old=$(otool -D "$RUNNER_TEMP/libusb/lib/$usb" | tail -1)
           cp "$RUNNER_TEMP/libusb/lib/$usb" "$root/lib/"
           chmod u+w "$root/lib/$usb"
           install_name_tool -id "@rpath/$usb" "$root/lib/$usb"
-          # every Mach-O file: libusb through @rpath, then signed again (ad hoc:
-          # a changed binary must be re-signed to run on Apple Silicon)
+          # Every Mach-O file: nothing may point at the build machine. Library
+          # references there (libusb) go through @rpath, rpaths there are
+          # removed; then each file is signed again (ad hoc: a changed binary
+          # must be re-signed to run on Apple Silicon).
           find "$root" -type f | while read -r f; do
+            case "$f" in *.a) continue;; esac # static libraries: nothing to change
             file "$f" | grep -q Mach-O || continue
             case "$f" in *.app/*|*.driver/*) bundle=1;; *) bundle=0;; esac
-            if otool -L "$f" | grep -qF "$old"; then
-              install_name_tool -change "$old" "@rpath/$usb" "$f"
-              case "$f" in */lib/*) install_name_tool -add_rpath "@loader_path" "$f" 2>/dev/null || true;; esac
-            fi
+            otool -L "$f" | awk 'NR > 1 { print $1 }' | { grep -F "$RUNNER_TEMP" || true; } | sort -u | while read -r dep; do
+              echo "$f: $dep -> @rpath/$(basename "$dep")"
+              install_name_tool -change "$dep" "@rpath/$(basename "$dep")" "$f"
+            done
+            otool -l "$f" | awk '$1 == "cmd" { c = $2 } c == "LC_RPATH" && $1 == "path" { print $2 }' | { grep -F "$RUNNER_TEMP" || true; } | sort -u | while read -r rp; do
+              echo "$f: rpath $rp removed"
+              install_name_tool -delete_rpath "$rp" "$f"
+            done
+            case "$f" in
+              */lib/*)
+                cmds=$(otool -l "$f")
+                case "$cmds" in *"path @loader_path "*) ;; *) install_name_tool -add_rpath "@loader_path" "$f";; esac;;
+            esac
             [ "$bundle" = 1 ] || codesign --force --sign - "$f"
           done
           find "$root" -type d \( -name '*.app' -o -name '*.driver' \) -prune | while read -r b; do
             codesign --force --deep --sign - "$b"
           done
-          # nothing may still point at the build machine
-
-          find "$root" -type f | while read -r f; do
+          # check: what still refers to the build machine, line by line
+          find "$root" -type f ! -name "*.a" | while read -r f; do
             file "$f" | grep -q Mach-O || continue
-            if { otool -L "$f"; otool -l "$f"; } | grep -qF "$RUNNER_TEMP"; then echo "::error::$f refers to $RUNNER_TEMP"; exit 1; fi
+            left=$({ otool -L "$f"; otool -l "$f"; } | grep -F "$RUNNER_TEMP" || true)
+            if [ -n "$left" ]; then echo "::error::$f still refers to the build machine: $left"; exit 1; fi
           done
           test -f "$root/share/doc/libfreenect/licenses/APACHE20"
           cp "$RUNNER_TEMP/libusb-src/COPYING" "$root/share/doc/libfreenect/licenses/libusb.txt"
