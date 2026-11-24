@@ -258,7 +258,7 @@ jobs:
           # check: what still refers to the build machine, line by line
           find "$root" -type f ! -name "*.a" | while read -r f; do
             file "$f" | grep -q Mach-O || continue
-            left=$({ otool -L "$f"; otool -l "$f"; } | grep -F "$RUNNER_TEMP" || true)
+            left=$({ otool -L "$f" | tail -n +2; otool -l "$f" | tail -n +2; } | grep -F "$RUNNER_TEMP" || true) # (the first line of each is the file's own name)
             if [ -n "$left" ]; then echo "::error::$f still refers to the build machine: $left"; exit 1; fi
           done
           test -f "$root/share/doc/libfreenect/licenses/APACHE20"
